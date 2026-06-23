@@ -378,6 +378,34 @@ export default function App() {
     textarea.dispatchEvent(event);
   };
 
+  // Sync default selection states once courses load
+  useEffect(() => {
+    if (courses && courses.length > 0) {
+      const hasFIN302 = courses.some(c => c.id === 'FIN302');
+      if (!hasFIN302) {
+        if (selectedCourseId === 'FIN302' || !selectedCourseId) {
+          setSelectedCourseId(courses[0].id);
+        }
+        if (newDeadlineCourseId === 'FIN302' || !newDeadlineCourseId) {
+          setNewDeadlineCourseId(courses[0].id);
+        }
+        if (newUrgentCourseId === 'FIN302' || !newUrgentCourseId) {
+          setNewUrgentCourseId(courses[0].id);
+        }
+      }
+    } else {
+      if (selectedCourseId === 'FIN302') {
+        setSelectedCourseId('');
+      }
+      if (newDeadlineCourseId === 'FIN302') {
+        setNewDeadlineCourseId('');
+      }
+      if (newUrgentCourseId === 'FIN302') {
+        setNewUrgentCourseId('');
+      }
+    }
+  }, [courses]);
+
   // Sync confidence calibration rate for automated spaced repetition
   useEffect(() => {
     if (!topics || !activeSubTopicId) {
@@ -402,6 +430,20 @@ export default function App() {
   // Bootstrap seed
   useEffect(() => {
     async function bootstrap() {
+      // Clear data if placeholder 'FIN302' is still present inside db.courses to do a clean upgrade
+      const hasFIN = await db.courses.get('FIN302');
+      if (hasFIN) {
+        console.log("Upgrading database - purging outdated placeholder courses");
+        try {
+          await db.courses.clear();
+          await db.topics.clear();
+          await db.deadlines.clear();
+          await db.urgentReviews.clear();
+        } catch (e) {
+          console.error("Auto-clear of placeholders failed:", e);
+        }
+      }
+
       await seedDatabase();
       
       // Load stored preference start dates
@@ -421,6 +463,28 @@ export default function App() {
     await db.settings.put({ key: 'semesterStartDate', value: customStart });
     await db.settings.put({ key: 'userName', value: customUserName });
     setShowSettingsModal(false);
+  };
+
+  const handleClearAllData = async () => {
+    if (window.confirm("Are you absolutely sure you want to delete all courses, custom notes, checklists, deadlines, and flashcards? This will reset your database to a completely empty slate so you can enter your own information from scratch.")) {
+      try {
+        await db.courses.clear();
+        await db.topics.clear();
+        await db.deadlines.clear();
+        await db.urgentReviews.clear();
+        
+        setSelectedCourseId("");
+        setActiveSubTopicId(null);
+        setActiveFlashcardsTopicId(null);
+        
+        setCurrentView('dashboard');
+        setShowSettingsModal(false);
+        alert("All placeholder data successfully erased! You are starting with a completely blank slate. Click 'Editor Mode' in 'My Course Grid' to add your custom courses & syllabus!");
+      } catch (err) {
+        console.error("Purge failed:", err);
+        alert("Database reset failed. Please reload the tab and try again.");
+      }
+    }
   };
 
   // Safe checks and helpers
@@ -809,8 +873,8 @@ export default function App() {
   };
 
   // Topic detail helpers
-  const activeCourse = courses.find(c => c.id === selectedCourseId) || courses[0];
-  const activeCourseTopics = topics.filter(t => t.courseId === activeCourse.id).sort((a,b) => a.weekNumber - b.weekNumber);
+  const activeCourse = courses && courses.length > 0 ? (courses.find(c => c.id === selectedCourseId) || courses[0]) : undefined;
+  const activeCourseTopics = activeCourse ? topics.filter(t => t.courseId === activeCourse.id).sort((a,b) => a.weekNumber - b.weekNumber) : [];
 
   // Retrieve current selection subtopic object
   const activeSelectionDetails = (() => {
@@ -990,7 +1054,7 @@ export default function App() {
 
   // Subtopic Creation
   const handleCreateSubTopic = async () => {
-    if (!newSubTopicTitle.trim()) return;
+    if (!newSubTopicTitle.trim() || !activeCourse) return;
     
     // Find matching topic record for course + week
     const targetTopic = activeCourseTopics.find(t => t.weekNumber === newSubTopicWeek);
@@ -1663,83 +1727,104 @@ export default function App() {
                     </form>
                   )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {courses.map((course) => {
-                      const stats = getCourseProgress(course.id);
-                      const cls = getCourseColors(course.color);
-                      
-                      return (
-                        <div 
-                          key={course.id} 
-                          onClick={() => {
-                            if (courseEditorActive) return; // Prevent navigation during edits
-                            setSelectedCourseId(course.id);
-                            setActiveSubTopicId(null);
-                            setActiveFlashcardsTopicId(null);
-                            setCurrentView('course');
-                          }}
-                          className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-5 hover:border-slate-300 transition-all cursor-pointer hover:-translate-y-0.5 group flex flex-col justify-between h-44 relative ${
-                            courseEditorActive ? 'ring-2 ring-amber-500/30 bg-slate-50/50' : ''
-                          }`}
-                        >
-                          {courseEditorActive && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteCourse(course.id);
-                              }}
-                              title={`Delete course ${course.code}`}
-                              className="absolute top-3.5 right-3.5 p-2 bg-rose-50 text-rose-500 hover:bg-rose-600 hover:text-white rounded-lg transition-all z-10 cursor-pointer shadow-sm shadow-rose-150"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
+                  {courses.length === 0 ? (
+                    <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-8 py-10 text-center space-y-3.5">
+                      <div className="mx-auto w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center text-xl font-bold">
+                        📚
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="font-display font-medium text-slate-800 text-sm">No Active Courses Found</h4>
+                        <p className="text-slate-400 text-xs max-w-sm mx-auto leading-relaxed">
+                          Your local environment is clear! Turn on <strong>Editor Mode</strong> above to add customized courses and auto-bootstrap 13-week syllabus chapters.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCourseEditorActive(true)}
+                        className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-sm transition-all"
+                      >
+                        Create Your First Course
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {courses.map((course) => {
+                        const stats = getCourseProgress(course.id);
+                        const cls = getCourseColors(course.color);
+                        
+                        return (
+                          <div 
+                            key={course.id} 
+                            onClick={() => {
+                              if (courseEditorActive) return; // Prevent navigation during edits
+                              setSelectedCourseId(course.id);
+                              setActiveSubTopicId(null);
+                              setActiveFlashcardsTopicId(null);
+                              setCurrentView('course');
+                            }}
+                            className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-5 hover:border-slate-300 transition-all cursor-pointer hover:-translate-y-0.5 group flex flex-col justify-between h-44 relative ${
+                              courseEditorActive ? 'ring-2 ring-amber-500/30 bg-slate-50/50' : ''
+                            }`}
+                          >
+                            {courseEditorActive && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteCourse(course.id);
+                                }}
+                                title={`Delete course ${course.code}`}
+                                className="absolute top-3.5 right-3.5 p-2 bg-rose-50 text-rose-500 hover:bg-rose-600 hover:text-white rounded-lg transition-all z-10 cursor-pointer shadow-sm shadow-rose-150"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
 
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-lg border ${cls.border} ${cls.bg}`}>
-                                {course.code}
-                              </span>
-                              {!courseEditorActive && (
-                                <div className="text-[11px] font-mono text-slate-400 font-medium group-hover:text-amber-500 transition-colors flex items-center gap-1">
-                                  Workspace <ChevronRight className="h-3 w-3" />
-                                </div>
-                              )}
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <span className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-lg border ${cls.border} ${cls.bg}`}>
+                                  {course.code}
+                                </span>
+                                {!courseEditorActive && (
+                                  <div className="text-[11px] font-mono text-slate-400 font-medium group-hover:text-amber-500 transition-colors flex items-center gap-1">
+                                    Workspace <ChevronRight className="h-3 w-3" />
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <h4 className="text-base font-bold text-slate-900 group-hover:text-slate-800 tracking-tight leading-tight mb-2 pr-6">
+                                {course.name}
+                              </h4>
                             </div>
-                            
-                            <h4 className="text-base font-bold text-slate-900 group-hover:text-slate-800 tracking-tight leading-tight mb-2 pr-6">
-                              {course.name}
-                            </h4>
+
+                            {/* Stat Indicators Section */}
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-xs text-slate-500">
+                                <span className="font-medium">Mastery Quotient (Completed Quizzes)</span>
+                                <span className="font-mono font-bold text-slate-800">{stats.completionRate}%</span>
+                              </div>
+                              
+                              {/* Complete bar indicator */}
+                              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full ${cls.accent} transition-all duration-300 rounded-full`}
+                                  style={{ width: `${stats.completionRate}%` }}
+                                />
+                              </div>
+
+                              {/* Bullet metrics counts */}
+                              <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 pt-1">
+                                <span className="flex items-center gap-0.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {stats.confidenceCount.GREEN} Green</span>
+                                <span className="flex items-center gap-0.5"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> {stats.confidenceCount.YELLOW} Yellow</span>
+                                <span className="flex items-center gap-0.5"><span className="h-1.5 w-1.5 rounded-full bg-red-500" /> {stats.confidenceCount.RED} Red</span>
+                                <span>{stats.totalSubtopics} Topics</span>
+                              </div>
+                            </div>
                           </div>
-
-                          {/* Stat Indicators Section */}
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between text-xs text-slate-500">
-                              <span className="font-medium">Mastery Quotient (Completed Quizzes)</span>
-                              <span className="font-mono font-bold text-slate-800">{stats.completionRate}%</span>
-                            </div>
-                            
-                            {/* Complete bar indicator */}
-                            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                              <div 
-                                className={`h-full ${cls.accent} transition-all duration-300 rounded-full`}
-                                style={{ width: `${stats.completionRate}%` }}
-                              />
-                            </div>
-
-                            {/* Bullet metrics counts */}
-                            <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 pt-1">
-                              <span className="flex items-center gap-0.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {stats.confidenceCount.GREEN} Green</span>
-                              <span className="flex items-center gap-0.5"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> {stats.confidenceCount.YELLOW} Yellow</span>
-                              <span className="flex items-center gap-0.5"><span className="h-1.5 w-1.5 rounded-full bg-red-500" /> {stats.confidenceCount.RED} Red</span>
-                              <span>{stats.totalSubtopics} Topics</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </section>
 
               </div>
@@ -2034,7 +2119,7 @@ export default function App() {
         )}
 
         {/* VIEW B: THE COURSE WORKSPACE (Strict 2-Pane UI) */}
-        {currentView === 'course' && (
+        {currentView === 'course' && activeCourse && (
           <div className="flex-1 flex flex-col gap-4">
             
             {/* Top Workspace Bar */}
@@ -3660,6 +3745,23 @@ Answer: First-in, First-out processing queue strategy.`}
                 <p className="text-[10px] text-slate-400 leading-snug">
                   Shift dates arbitrarily to test deadline changes (<em className="text-rose-500">Critical &lt; 24h</em> turns Red and pulses) or verify how spaced repetition scheduled reviews pop up due in real time!
                 </p>
+              </div>
+
+              {/* Reset to empty slate */}
+              <div className="space-y-2 border-t border-slate-150 pt-4">
+                <label className="text-[11px] font-bold text-rose-550 block flex items-center gap-1.5 uppercase">
+                  <span>⚠️</span> Danger Zone: Blank Slate
+                </label>
+                <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                  Prune all built-in Finance & CS demo data to clear your slate. This database-erases all placeholder courses, notes, flashcards, quizzes, and tasks so you can input your own personal curriculum!
+                </p>
+                <button
+                  type="button"
+                  onClick={handleClearAllData}
+                  className="w-full flex items-center justify-center gap-1.5 p-2 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 hover:text-rose-950 font-bold rounded-lg transition-all text-[11px] cursor-pointer shadow-sm"
+                >
+                  Clear All Data & Start Blank
+                </button>
               </div>
 
             </div>
