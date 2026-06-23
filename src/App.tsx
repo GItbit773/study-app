@@ -30,7 +30,8 @@ import {
   Sliders,
   Settings,
   Download,
-  Upload
+  Upload,
+  GripVertical
 } from 'lucide-react';
 
 export function parseBulkFlashcardText(text: string): { front: string; back: string }[] {
@@ -379,6 +380,170 @@ export default function App() {
 
     const event = new Event('input', { bubbles: true });
     textarea.dispatchEvent(event);
+  };
+
+  // Drag and drop state for subtopics reordering
+  const [draggedSubTopicIndex, setDraggedSubTopicIndex] = useState<number | null>(null);
+  const [draggedFromTopicId, setDraggedFromTopicId] = useState<number | null>(null);
+
+  const handleSubTopicDragStart = (e: React.DragEvent, topicId: number, index: number) => {
+    setDraggedSubTopicIndex(index);
+    setDraggedFromTopicId(topicId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleSubTopicDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+  };
+
+  const handleSubTopicDrop = async (e: React.DragEvent, topicId: number, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedSubTopicIndex === null || draggedFromTopicId !== topicId) return;
+    if (draggedSubTopicIndex === targetIndex) return;
+
+    // Find the topic record
+    const topicRec = topics?.find(t => t.id === topicId);
+    if (!topicRec || !topicRec.subTopics) return;
+
+    // Reorder the subTopics array
+    const updatedSubTopics = [...topicRec.subTopics];
+    const [draggedItem] = updatedSubTopics.splice(draggedSubTopicIndex, 1);
+    updatedSubTopics.splice(targetIndex, 0, draggedItem);
+
+    // Update orderIndex values to maintain sequence
+    const finalSubTopics = updatedSubTopics.map((sub, idx) => ({
+      ...sub,
+      orderIndex: idx
+    }));
+
+    try {
+      await db.topics.update(topicId, { subTopics: finalSubTopics });
+    } catch (err) {
+      console.error("Failed to reorder subtopics:", err);
+    }
+
+    setDraggedSubTopicIndex(null);
+    setDraggedFromTopicId(null);
+  };
+
+  const handleSubTopicDragEnd = () => {
+    setDraggedSubTopicIndex(null);
+    setDraggedFromTopicId(null);
+  };
+
+  // Keyboard shortcut handler for notes editor textarea (Cmd/Ctrl + B/I/U and Tab)
+  const handleNotesKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget;
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+    if (isCmdOrCtrl && e.key.toLowerCase() === 'b') {
+      e.preventDefault();
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value;
+      const selected = text.substring(start, end);
+      const before = text.substring(0, start);
+      const after = text.substring(end, text.length);
+
+      const isWrapped = selected.startsWith('**') && selected.endsWith('**');
+      const replacement = isWrapped 
+        ? selected.substring(2, selected.length - 2)
+        : `**${selected}**`;
+
+      textarea.value = before + replacement + after;
+      textarea.selectionStart = start;
+      textarea.selectionEnd = start + replacement.length;
+      textarea.focus();
+
+      const event = new Event('input', { bubbles: true });
+      textarea.dispatchEvent(event);
+
+    } else if (isCmdOrCtrl && e.key.toLowerCase() === 'i') {
+      e.preventDefault();
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value;
+      const selected = text.substring(start, end);
+      const before = text.substring(0, start);
+      const after = text.substring(end, text.length);
+
+      const isWrapped = selected.startsWith('*') && selected.endsWith('*');
+      const replacement = isWrapped 
+        ? selected.substring(1, selected.length - 1)
+        : `*${selected}*`;
+
+      textarea.value = before + replacement + after;
+      textarea.selectionStart = start;
+      textarea.selectionEnd = start + replacement.length;
+      textarea.focus();
+
+      const event = new Event('input', { bubbles: true });
+      textarea.dispatchEvent(event);
+
+    } else if (isCmdOrCtrl && e.key.toLowerCase() === 'u') {
+      e.preventDefault();
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value;
+      const selected = text.substring(start, end);
+      const before = text.substring(0, start);
+      const after = text.substring(end, text.length);
+
+      const isWrapped = selected.startsWith('<u>') && selected.endsWith('</u>');
+      const replacement = isWrapped 
+        ? selected.substring(3, selected.length - 4)
+        : `<u>${selected}</u>`;
+
+      textarea.value = before + replacement + after;
+      textarea.selectionStart = start;
+      textarea.selectionEnd = start + replacement.length;
+      textarea.focus();
+
+      const event = new Event('input', { bubbles: true });
+      textarea.dispatchEvent(event);
+
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value;
+
+      if (e.shiftKey) {
+        const before = text.substring(0, start);
+        const lineStartPos = before.lastIndexOf('\n') + 1;
+        const after = text.substring(end);
+        const middle = text.substring(lineStartPos, end);
+        
+        const lines = middle.split('\n');
+        const modifiedLines = lines.map(line => {
+          if (line.startsWith('  ')) return line.substring(2);
+          if (line.startsWith(' ')) return line.substring(1);
+          return line;
+        });
+        
+        const replacement = modifiedLines.join('\n');
+        textarea.value = text.substring(0, lineStartPos) + replacement + after;
+        textarea.selectionStart = Math.max(lineStartPos, start - (middle.length - replacement.length));
+        textarea.selectionEnd = lineStartPos + replacement.length;
+      } else {
+        const before = text.substring(0, start);
+        const lineStartPos = before.lastIndexOf('\n') + 1;
+        const after = text.substring(end);
+        const middle = text.substring(lineStartPos, end);
+        
+        const lines = middle.split('\n');
+        const modifiedLines = lines.map(line => '  ' + line);
+        
+        const replacement = modifiedLines.join('\n');
+        textarea.value = text.substring(0, lineStartPos) + replacement + after;
+        textarea.selectionStart = start + 2;
+        textarea.selectionEnd = lineStartPos + replacement.length;
+      }
+      textarea.focus();
+      const event = new Event('input', { bubbles: true });
+      textarea.dispatchEvent(event);
+    }
   };
 
   // Sync default selection states once courses load
@@ -2403,6 +2568,7 @@ export default function App() {
                               ) : (
                                 topicRec.subTopics?.map((sub, sidx) => {
                                   const isActive = activeSubTopicId === sub.subTopicId;
+                                  const isBeingDragged = draggedSubTopicIndex === sidx && draggedFromTopicId === topicRec.id;
                                   
                                   const nowLimit = new Date(simulatedTodayString);
                                   nowLimit.setHours(23, 59, 59, 999);
@@ -2429,16 +2595,27 @@ export default function App() {
                                   return (
                                     <div 
                                       key={sub.subTopicId}
-                                      className={`flex items-center gap-2 justify-between rounded-md p-1.5 transition-colors text-xs ${containerBgClass}`}
+                                      draggable
+                                      onDragStart={(e) => handleSubTopicDragStart(e, topicRec.id!, sidx)}
+                                      onDragOver={(e) => handleSubTopicDragOver(e, sidx)}
+                                      onDrop={(e) => handleSubTopicDrop(e, topicRec.id!, sidx)}
+                                      onDragEnd={handleSubTopicDragEnd}
+                                      className={`flex items-center gap-1.5 justify-between rounded-md p-1.5 transition-all text-xs cursor-grab active:cursor-grabbing ${containerBgClass} ${isBeingDragged ? 'opacity-40 border border-dashed border-amber-500' : ''}`}
                                     >
-                                      <input
-                                        type="checkbox"
-                                        checked={!!sub.completed}
-                                        onChange={(e) => handleToggleSubTopicComplete(topicRec, sidx, e.target.checked)}
-                                        className={`h-3.5 w-3.5 rounded cursor-pointer shrink-0 ${isOverdue ? 'accent-white border-white/40' : 'accent-red-600 border-slate-300'}`}
-                                        title="Toggle completion"
-                                        onClick={(e) => e.stopPropagation()}
-                                      />
+                                      {/* Drag handle & checkbox */}
+                                      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        <span className={`p-0.5 rounded transition-colors ${isActive ? 'text-slate-400' : 'text-slate-300 hover:text-slate-500'}`} title="Drag to reorder">
+                                          <GripVertical className="h-3.5 w-3.5" />
+                                        </span>
+                                        <input
+                                          type="checkbox"
+                                          checked={!!sub.completed}
+                                          onChange={(e) => handleToggleSubTopicComplete(topicRec, sidx, e.target.checked)}
+                                          className={`h-3.5 w-3.5 rounded cursor-pointer shrink-0 ${isOverdue ? 'accent-white border-white/40' : 'accent-red-600 border-slate-300'}`}
+                                          title="Toggle completion"
+                                        />
+                                      </div>
+
                                       <button
                                         onClick={() => {
                                           setActiveSubTopicId(sub.subTopicId);
@@ -2643,6 +2820,7 @@ export default function App() {
                           id="markdown-notes-editor"
                           defaultValue={activeSelectionDetails.subTopic.notesMarkdown}
                           rows={14}
+                          onKeyDown={handleNotesKeyDown}
                           className="w-full bg-white p-3 font-mono text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500"
                         />
 
@@ -2651,9 +2829,9 @@ export default function App() {
                           <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                             <div className="flex items-center gap-1.5 font-semibold text-slate-800">
                               <span className="text-sm">📓</span>
-                              <span className="font-display font-bold text-slate-700 tracking-tight text-xs">Obsidian-Style Formatting Guide</span>
+                              <span className="font-display font-bold text-slate-700 tracking-tight text-xs">Standard & Math Formatting Glossary</span>
                             </div>
-                            <span className="text-[10px] text-slate-400 font-mono">Click [+ Use] to insert template at your cursor!</span>
+                            <span className="text-[10px] text-slate-400 font-mono">Reference Guide</span>
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-slate-600">
@@ -2661,122 +2839,66 @@ export default function App() {
                             <div className="space-y-2">
                               <div className="font-semibold text-[10px] uppercase tracking-wider text-slate-400">Typography & Lists</div>
                               <div className="grid grid-cols-1 gap-1.5">
-                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-amber-300 transition-colors">
+                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors">
                                   <div className="flex flex-col">
                                     <span className="font-bold text-[11px] text-slate-800">Heading 1</span>
-                                    <span className="font-mono text-[10px] text-slate-400 font-medium"># Title</span>
+                                    <span className="font-mono text-[10px] text-amber-600 font-medium"># Title</span>
                                   </div>
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleInsertSnippet('\n# New Heading 1\n')} 
-                                    className="px-2 py-0.5 bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 border border-slate-200 rounded text-[10px] transition-colors font-medium cursor-pointer"
-                                  >
-                                    + Use
-                                  </button>
                                 </div>
 
-                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-amber-300 transition-colors">
+                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors">
                                   <div className="flex flex-col">
                                     <span className="font-bold text-[11px] text-slate-800">Heading 2</span>
-                                    <span className="font-mono text-[10px] text-slate-400 font-medium">## Subsection</span>
+                                    <span className="font-mono text-[10px] text-amber-600 font-medium">## Subsection</span>
                                   </div>
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleInsertSnippet('\n## New Heading 2\n')} 
-                                    className="px-2 py-0.5 bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 border border-slate-200 rounded text-[10px] transition-colors font-medium cursor-pointer"
-                                  >
-                                    + Use
-                                  </button>
                                 </div>
 
-                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-amber-300 transition-colors">
+                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors">
                                   <div className="flex flex-col">
                                     <span className="font-bold text-[11px] text-slate-800">Bold Text</span>
-                                    <span className="font-mono text-[10px] text-slate-400 font-medium">**bold text**</span>
+                                    <span className="font-mono text-[10px] text-amber-600 font-medium">**bold text**</span>
                                   </div>
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleInsertSnippet('**bold text**')} 
-                                    className="px-2 py-0.5 bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 border border-slate-200 rounded text-[10px] transition-colors font-medium cursor-pointer"
-                                  >
-                                    + Use
-                                  </button>
                                 </div>
 
-                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-amber-300 transition-colors">
+                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors">
                                   <div className="flex flex-col">
                                     <span className="font-bold text-[11px] text-slate-800">Bullet Item</span>
-                                    <span className="font-mono text-[10px] text-slate-400 font-medium">- List Item</span>
+                                    <span className="font-mono text-[10px] text-amber-600 font-medium">- List Item</span>
                                   </div>
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleInsertSnippet('\n- New Bullet Item\n')} 
-                                    className="px-2 py-0.5 bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 border border-slate-200 rounded text-[10px] transition-colors font-medium cursor-pointer"
-                                  >
-                                    + Use
-                                  </button>
                                 </div>
                               </div>
                             </div>
 
                             {/* Column 2: Code & Math Block Layout */}
                             <div className="space-y-2">
-                              <div className="font-semibold text-[10px] uppercase tracking-wider text-slate-400">Obsidian Code & Math</div>
+                              <div className="font-semibold text-[10px] uppercase tracking-wider text-slate-400">Code & Math Formulas</div>
                               <div className="grid grid-cols-1 gap-1.5">
-                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-amber-300 transition-colors">
+                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors">
                                   <div className="flex flex-col">
                                     <span className="font-bold text-[11px] text-slate-800">Inline Code Block</span>
-                                    <span className="font-mono text-[10px] text-slate-400 font-medium">`code code`</span>
+                                    <span className="font-mono text-[10px] text-amber-600 font-medium">`code code`</span>
                                   </div>
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleInsertSnippet('`const result = calculateValue();`')} 
-                                    className="px-2 py-0.5 bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 border border-slate-200 rounded text-[10px] transition-colors font-medium cursor-pointer"
-                                  >
-                                    + Use
-                                  </button>
                                 </div>
 
-                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-amber-300 transition-colors">
+                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors">
                                   <div className="flex flex-col">
                                     <span className="font-bold text-[11px] text-slate-800">Code Block (Multiline)</span>
-                                    <span className="font-mono text-[10px] text-slate-400 font-medium">```typescript ... ```</span>
+                                    <span className="font-mono text-[10px] text-amber-600 font-medium">```typescript ... ```</span>
                                   </div>
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleInsertSnippet('\n```typescript\nconst sum = (a: number, b: number): number => {\n  return a + b;\n};\n```\n')} 
-                                    className="px-2 py-0.5 bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 border border-slate-200 rounded text-[10px] transition-colors font-medium cursor-pointer"
-                                  >
-                                    + Use
-                                  </button>
                                 </div>
 
-                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-amber-300 transition-colors">
+                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors">
                                   <div className="flex flex-col">
                                     <span className="font-bold text-[11px] text-slate-800">Inline Math formula</span>
-                                    <span className="font-mono text-[10px] text-slate-400 font-medium">$$ E = mc^2 $$</span>
+                                    <span className="font-mono text-[10px] text-amber-600 font-medium">$$ E = mc^2 $$</span>
                                   </div>
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleInsertSnippet('$$E = mc^2$$')} 
-                                    className="px-2 py-0.5 bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 border border-slate-200 rounded text-[10px] transition-colors font-medium cursor-pointer"
-                                  >
-                                    + Use
-                                  </button>
                                 </div>
 
-                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-amber-300 transition-colors">
+                                <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors">
                                   <div className="flex flex-col">
                                     <span className="font-bold text-[11px] text-slate-800">Display Math Block</span>
-                                    <span className="font-mono text-[10px] text-slate-400 font-medium">$$ equation $$</span>
+                                    <span className="font-mono text-[10px] text-amber-600 font-medium">$$ equation $$</span>
                                   </div>
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleInsertSnippet('\n$$\nf(x) = \\int_{-\\infty}^{\\infty} e^{-x^2} dx\n$$\n')} 
-                                    className="px-2 py-0.5 bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 border border-slate-200 rounded text-[10px] transition-colors font-medium cursor-pointer"
-                                  >
-                                    + Use
-                                  </button>
                                 </div>
                               </div>
                             </div>
