@@ -4,6 +4,7 @@ import { db, seedDatabase } from './db';
 import { Course, TopicRecord, Deadline, SubTopic, Flashcard, UrgentReview, QuizQuestion } from './types';
 import { MarkdownView } from './components/MarkdownView';
 import { TermCalendar } from './components/TermCalendar';
+import { ModernLogo } from './components/ModernLogo';
 import { 
   BookOpen, 
   Clock, 
@@ -27,7 +28,9 @@ import {
   BookMarked,
   RotateCcw,
   Sliders,
-  Settings
+  Settings,
+  Download,
+  Upload
 } from 'lucide-react';
 
 export function parseBulkFlashcardText(text: string): { front: string; back: string }[] {
@@ -487,13 +490,119 @@ export default function App() {
     }
   };
 
+  const handleExportData = async () => {
+    try {
+      const exportObject = {
+        app: "StudyMaster",
+        version: "1.0.0",
+        exportedAt: new Date().toISOString(),
+        courses: await db.courses.toArray(),
+        topics: await db.topics.toArray(),
+        deadlines: await db.deadlines.toArray(),
+        urgentReviews: await db.urgentReviews.toArray(),
+        settings: await db.settings.toArray()
+      };
+
+      const jsonString = JSON.stringify(exportObject, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `studymaster-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      alert("StudyMaster database backup exported successfully!");
+    } catch (err) {
+      console.error("Export failed:", err);
+      alert("Failed to export data backup: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const handleImportData = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const importObject = JSON.parse(text);
+
+      // Simple structural validation
+      if (!importObject || importObject.app !== "StudyMaster") {
+        alert("Invalid backup file. Make sure it is a valid backup generated from StudyMaster.");
+        return;
+      }
+
+      const confirmImport = window.confirm("Importing this backup will overwrite your current courses, notes, and progress. Do you want to continue?");
+      if (!confirmImport) {
+        if (event.target) event.target.value = '';
+        return;
+      }
+
+      await db.transaction('rw', [db.courses, db.topics, db.deadlines, db.urgentReviews, db.settings], async () => {
+        // Clear all
+        await db.courses.clear();
+        await db.topics.clear();
+        await db.deadlines.clear();
+        await db.urgentReviews.clear();
+        await db.settings.clear();
+
+        // Add imported items safely if they exist in the backup
+        if (Array.isArray(importObject.courses)) {
+          await db.courses.bulkAdd(importObject.courses);
+        }
+        if (Array.isArray(importObject.topics)) {
+          await db.topics.bulkAdd(importObject.topics);
+        }
+        if (Array.isArray(importObject.deadlines)) {
+          await db.deadlines.bulkAdd(importObject.deadlines);
+        }
+        if (Array.isArray(importObject.urgentReviews)) {
+          await db.urgentReviews.bulkAdd(importObject.urgentReviews);
+        }
+        if (Array.isArray(importObject.settings)) {
+          await db.settings.bulkAdd(importObject.settings);
+        } else {
+          // Re-add default settings if none imported
+          await db.settings.bulkAdd([
+            { key: 'semesterStartDate', value: '2026-06-08' },
+            { key: 'userName', value: 'Alex' }
+          ]);
+        }
+      });
+
+      // Clear selection states to avoid pointing to non-existent ids
+      setSelectedCourseId("");
+      setActiveSubTopicId(null);
+      setActiveFlashcardsTopicId(null);
+      setCurrentView('dashboard');
+      
+      // Reload page preference values if imported
+      const savedStart = importObject.settings?.find((s: any) => s.key === 'semesterStartDate')?.value;
+      const savedUser = importObject.settings?.find((s: any) => s.key === 'userName')?.value;
+      if (savedStart) setCustomStart(savedStart);
+      if (savedUser) setCustomUserName(savedUser);
+
+      alert("StudyMaster data backup restored successfully!");
+    } catch (err) {
+      console.error("Import failed:", err);
+      alert("Failed to import backup: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      if (event.target) event.target.value = '';
+    }
+  };
+
   // Safe checks and helpers
   if (!dbSeeded || !courses || !topics || !deadlines || !urgentReviews) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="font-display text-lg font-semibold text-slate-800">Initializing StudyMaster Local Database...</p>
-        <p className="text-sm text-slate-400 mt-2">Connecting secure browser IndexedDB store via Dexie</p>
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center text-slate-100">
+        <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl shadow-xl flex items-center justify-center animate-pulse mb-6">
+          <ModernLogo className="text-amber-500" size={54} />
+        </div>
+        <p className="font-display text-base font-bold text-white tracking-tight">Initializing StudyMaster Local Database...</p>
+        <p className="text-xs text-slate-400 mt-2 font-mono">Connecting secure, high-utility IndexedDB browser sandbox</p>
       </div>
     );
   }
@@ -1375,8 +1484,8 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg shadow-inner">
-              <GraduationCap className="h-6 w-6 text-white" />
+            <div className="p-1.5 bg-slate-950 border border-slate-800 rounded-xl shadow-inner flex items-center justify-center">
+              <ModernLogo className="text-amber-500" size={30} />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -1404,6 +1513,16 @@ export default function App() {
               </div>
             </div>
             
+            {/* Quick Export/Import Data icons or settings button */}
+            <button 
+              onClick={handleExportData}
+              title="Export database backup (JSON)"
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-[10px] font-mono font-bold"
+            >
+              <Download className="h-3.5 w-3.5 text-amber-500" />
+              <span className="hidden sm:inline">BACKUP</span>
+            </button>
+
             {/* Action Cog to edit active simulation dates and name */}
             <button 
               onClick={() => setShowSettingsModal(true)} 
@@ -3745,6 +3864,36 @@ Answer: First-in, First-out processing queue strategy.`}
                 <p className="text-[10px] text-slate-400 leading-snug">
                   Shift dates arbitrarily to test deadline changes (<em className="text-rose-500">Critical &lt; 24h</em> turns Red and pulses) or verify how spaced repetition scheduled reviews pop up due in real time!
                 </p>
+              </div>
+
+              {/* Data Portability */}
+              <div className="space-y-2 border-t border-slate-100 pt-4">
+                <label className="text-[11px] font-bold text-slate-500 block uppercase tracking-wider">
+                  💾 Local Data Portability
+                </label>
+                <p className="text-[10px] text-slate-400 leading-snug">
+                  Save a physical backup file on your machine. Restore it anytime to recover your courses, custom study notes, flashcards, and completed quizzes if your browser cache is cleared.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExportData}
+                    className="flex items-center justify-center gap-1.5 p-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-lg transition-all text-[11px] cursor-pointer shadow-sm"
+                  >
+                    <Download className="h-3.5 w-3.5 text-amber-500" />
+                    <span>Export Backup</span>
+                  </button>
+                  <label className="flex items-center justify-center gap-1.5 p-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-lg transition-all text-[11px] cursor-pointer shadow-sm relative">
+                    <Upload className="h-3.5 w-3.5 text-amber-500" />
+                    <span>Import Backup</span>
+                    <input 
+                      type="file" 
+                      accept=".json" 
+                      onChange={handleImportData} 
+                      className="hidden" 
+                    />
+                  </label>
+                </div>
               </div>
 
               {/* Reset to empty slate */}
