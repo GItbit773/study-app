@@ -1,0 +1,6 @@
+{
+  "name": "StudyMaster Ecosystem",
+  "description": "A local-first academic tracker featuring built-in course modules, study notes, mastery quizzes, flashcards, and an automated spaced-repetition daily queue.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
