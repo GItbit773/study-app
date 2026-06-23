@@ -342,6 +342,10 @@ export default function App() {
   // Safe non-blocking custom toasts to replace browser alert/dialog limitations in iframes
   const [renamingTopicId, setRenamingTopicId] = useState<number | null>(null);
   const [renamingTopicValue, setRenamingTopicValue] = useState<string>('');
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+  const [editingCourseName, setEditingCourseName] = useState<string>('');
+  const [editingCourseCode, setEditingCourseCode] = useState<string>('');
+  const [editingCourseColor, setEditingCourseColor] = useState<string>('');
   const [quickAddingSubTopicTopicId, setQuickAddingSubTopicTopicId] = useState<number | null>(null);
   const [quickAddingSubTopicValue, setQuickAddingSubTopicValue] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1117,6 +1121,40 @@ export default function App() {
       }
       alert(`Deleted Course ${courseIdStr} and all associated chapters.`);
     }
+  };
+
+  const handleStartRenameCourse = (course: Course) => {
+    setEditingCourseId(course.id);
+    setEditingCourseName(course.name);
+    setEditingCourseCode(course.code);
+    setEditingCourseColor(course.color);
+  };
+
+  const handleSaveRenameCourse = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingCourseId) return;
+
+    const trimmedName = editingCourseName.trim();
+    const trimmedCode = editingCourseCode.trim();
+
+    if (!trimmedName || !trimmedCode) {
+      alert("Course name and shorthand code cannot be empty!");
+      return;
+    }
+
+    try {
+      await db.courses.update(editingCourseId, {
+        name: trimmedName,
+        code: trimmedCode,
+        color: editingCourseColor
+      });
+      showToast("Course details updated successfully!");
+    } catch (err) {
+      console.error("Failed to update course:", err);
+      alert("Error saving course edits.");
+    }
+
+    setEditingCourseId(null);
   };
 
   // Urgent reviews checklist handlers
@@ -2036,6 +2074,75 @@ export default function App() {
                         const stats = getCourseProgress(course.id);
                         const cls = getCourseColors(course.color);
                         
+                        if (editingCourseId === course.id) {
+                          return (
+                            <form 
+                              key={course.id}
+                              onSubmit={handleSaveRenameCourse}
+                              onClick={(e) => e.stopPropagation()}
+                              className="bg-slate-50 rounded-2xl shadow-md border-2 border-amber-400 p-5 flex flex-col justify-between h-44 relative animate-fadeIn"
+                            >
+                              <div className="space-y-1.5">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="text-[9px] font-bold text-slate-400 block uppercase">Shorthand Code</label>
+                                    <input 
+                                      type="text"
+                                      required
+                                      value={editingCourseCode}
+                                      onChange={(e) => setEditingCourseCode(e.target.value)}
+                                      className="bg-white border border-slate-250 px-2 py-1 rounded text-xs w-full font-mono text-slate-800 focus:outline-none focus:border-amber-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-slate-400 block uppercase">Accent Color</label>
+                                    <select 
+                                      value={editingCourseColor}
+                                      onChange={(e) => setEditingCourseColor(e.target.value)}
+                                      className="bg-white border border-slate-250 px-1 py-1 rounded text-xs w-full text-slate-800 cursor-pointer focus:outline-none focus:border-amber-500 font-medium"
+                                    >
+                                      <option value="amber">Amber</option>
+                                      <option value="rose">Rose</option>
+                                      <option value="indigo">Indigo</option>
+                                      <option value="violet">Violet</option>
+                                      <option value="emerald">Emerald</option>
+                                      <option value="teal">Teal</option>
+                                      <option value="orange">Orange</option>
+                                      <option value="sky">Sky</option>
+                                    </select>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="text-[9px] font-bold text-slate-400 block uppercase">Course Title Name</label>
+                                  <input 
+                                    type="text"
+                                    required
+                                    value={editingCourseName}
+                                    onChange={(e) => setEditingCourseName(e.target.value)}
+                                    className="bg-white border border-slate-250 px-2 py-1 rounded text-xs w-full text-slate-800 focus:outline-none focus:border-amber-500"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex justify-end gap-1.5 pt-1">
+                                <button 
+                                  type="button"
+                                  onClick={() => setEditingCourseId(null)}
+                                  className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-bold text-[11px] cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                                <button 
+                                  type="submit"
+                                  className="px-3.5 py-1 bg-amber-500 text-slate-950 hover:bg-amber-600 rounded font-black text-[11px] cursor-pointer shadow-sm"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </form>
+                          );
+                        }
+
                         return (
                           <div 
                             key={course.id} 
@@ -2051,17 +2158,24 @@ export default function App() {
                             }`}
                           >
                             {courseEditorActive && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteCourse(course.id);
-                                }}
-                                title={`Delete course ${course.code}`}
-                                className="absolute top-3.5 right-3.5 p-2 bg-rose-50 text-rose-500 hover:bg-rose-600 hover:text-white rounded-lg transition-all z-10 cursor-pointer shadow-sm shadow-rose-150"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
+                              <div className="absolute top-3.5 right-3.5 flex gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartRenameCourse(course)}
+                                  title={`Edit course ${course.code}`}
+                                  className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-slate-950 rounded-lg transition-all cursor-pointer shadow-sm shadow-amber-100"
+                                >
+                                  <Edit className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCourse(course.id)}
+                                  title={`Delete course ${course.code}`}
+                                  className="p-1.5 bg-rose-50 text-rose-500 hover:bg-rose-600 hover:text-white rounded-lg transition-all cursor-pointer shadow-sm shadow-rose-100"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             )}
 
                             <div>
@@ -2532,26 +2646,32 @@ export default function App() {
                                 </div>
                               ) : (
                                 <>
-                                  <div className="space-y-0.5">
+                                  <div 
+                                    className="space-y-0.5 grow cursor-pointer select-none"
+                                    onDoubleClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRenameTopic(topicRec.id!, topicRec.topicTitle);
+                                    }}
+                                    title="Double click to rename topic"
+                                  >
                                     <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">WEEK {topicRec.weekNumber}</span>
-                                    <h5 className="text-xs font-bold text-slate-850 truncate max-w-[180px] leading-tight flex items-center gap-1">
+                                    <h5 className="text-xs font-bold text-slate-850 truncate max-w-[180px] leading-tight flex items-center gap-1 hover:text-amber-600 transition-colors">
                                       {topicRec.topicTitle || `Week ${topicRec.weekNumber} Modules`}
                                     </h5>
                                   </div>
                                   <div className="flex items-center gap-1">
-                                    {syllabusEditorMode && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleRenameTopic(topicRec.id!, topicRec.topicTitle);
-                                        }}
-                                        className="p-1 hover:bg-slate-250 hover:bg-amber-100 text-[10px] rounded text-slate-600 hover:text-amber-950 transition-all cursor-pointer font-bold"
-                                        title="Rename Syllabus Topic"
-                                      >
-                                        ✏️ Rename
-                                      </button>
-                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRenameTopic(topicRec.id!, topicRec.topicTitle);
+                                      }}
+                                      className="p-1 px-1.5 hover:bg-slate-200 hover:bg-amber-100 text-[10px] rounded text-slate-600 hover:text-amber-950 transition-all cursor-pointer font-bold flex items-center gap-0.5"
+                                      title="Rename Syllabus Topic"
+                                    >
+                                      <span>✏️</span>
+                                      <span className="hidden sm:inline">Rename</span>
+                                    </button>
                                     {isExpanded ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
                                   </div>
                                 </>
