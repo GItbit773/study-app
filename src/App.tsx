@@ -244,6 +244,14 @@ export function parseBulkQuizText(text: string): QuizQuestion[] {
   return parsedQuestions;
 }
 
+function getLocalTodayDateString() {
+  const localDate = new Date();
+  const year = localDate.getFullYear();
+  const month = String(localDate.getMonth() + 1).padStart(2, '0');
+  const day = String(localDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function App() {
   // 1. Fetching Dexie DB live values
   const courses = useLiveQuery(() => db.courses.toArray());
@@ -291,7 +299,7 @@ export default function App() {
 
   // Quick action states
   const [newDeadlineTitle, setNewDeadlineTitle] = useState('');
-  const [newDeadlineDate, setNewDeadlineDate] = useState('2026-06-18');
+  const [newDeadlineDate, setNewDeadlineDate] = useState(getLocalTodayDateString());
   const [newDeadlineTime, setNewDeadlineTime] = useState('12:00');
   const [newDeadlineCourseId, setNewDeadlineCourseId] = useState('FIN302');
 
@@ -308,7 +316,7 @@ export default function App() {
   const [newUrgentCourseId, setNewUrgentCourseId] = useState<string>('FIN302');
 
   // Custom simulation and calibration state
-  const [simDate, setSimDate] = useState('2026-06-16'); // default system simulated date
+  const [simDate, setSimDate] = useState(getLocalTodayDateString()); // default system simulated date
   const [customStart, setCustomStart] = useState('2026-06-08'); 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [customUserName, setCustomUserName] = useState('Alex Developer');
@@ -327,6 +335,8 @@ export default function App() {
   const [newQuizOption2, setNewQuizOption2] = useState<string>('');
   const [newQuizOption3, setNewQuizOption3] = useState<string>('');
   const [newQuizOption4, setNewQuizOption4] = useState<string>('');
+  const [newQuizOption5, setNewQuizOption5] = useState<string>('');
+  const [newQuizOptionCount, setNewQuizOptionCount] = useState<number>(4);
   const [newQuizCorrectIndex, setNewQuizCorrectIndex] = useState<number>(0);
   const [showViewModeQuizBuilder, setShowViewModeQuizBuilder] = useState<boolean>(false);
   const [activeViewTab, setActiveViewTab] = useState<'notes' | 'quiz' | 'flashcards'>('notes');
@@ -1460,12 +1470,17 @@ export default function App() {
     if (!activeSelectionDetails) return;
     if (!newQuizQuestionPrompt.trim()) return;
 
-    const optionsList = [
-      newQuizOption1.trim(),
-      newQuizOption2.trim(),
-      newQuizOption3.trim(),
-      newQuizOption4.trim()
-    ].filter(Boolean);
+    const optionsList: string[] = [];
+    if (newQuizOptionCount >= 1) optionsList.push(newQuizOption1.trim());
+    if (newQuizOptionCount >= 2) optionsList.push(newQuizOption2.trim());
+    if (newQuizOptionCount >= 3) optionsList.push(newQuizOption3.trim());
+    if (newQuizOptionCount >= 4) optionsList.push(newQuizOption4.trim());
+    if (newQuizOptionCount >= 5) optionsList.push(newQuizOption5.trim());
+
+    if (optionsList.some(opt => !opt)) {
+      alert("Please fill in all of your visible option fields!");
+      return;
+    }
 
     if (optionsList.length < 2) {
       alert("Please provide at least 2 multiple-choice options!");
@@ -1496,6 +1511,8 @@ export default function App() {
     setNewQuizOption2('');
     setNewQuizOption3('');
     setNewQuizOption4('');
+    setNewQuizOption5('');
+    setNewQuizOptionCount(4);
     setNewQuizCorrectIndex(0);
     setShowViewModeQuizBuilder(false);
     alert("New quiz question successfully added!");
@@ -1661,82 +1678,80 @@ export default function App() {
       case 'sky':
         default:
         return {
-          bg: 'bg-sky-50',
-          border: 'border-sky-200 text-sky-800',
-          hover: 'hover:bg-sky-100',
-          accent: 'bg-sky-500',
-          text: 'text-sky-800',
-          gradient: 'from-sky-600 to-sky-700'
+          bg: 'bg-[#EAF8FC]',
+          border: 'border-[#B6E5F0] text-[#136A7E]',
+          hover: 'hover:bg-[#D5F0F7]',
+          accent: 'bg-[#1EA5C4]',
+          text: 'text-[#136A7E]',
+          gradient: 'from-[#1EA5C4] to-[#17829B]'
         };
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col">
+    <div className="min-h-screen bg-[#FAF8F5] text-[#1C1A17] font-retro text-lg flex flex-col selection:bg-[#4C5E24]/10 pb-20 relative overflow-x-hidden">
 
       {/* Custom float toast message */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-slate-700 text-slate-100 px-4.5 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-bounce-short max-w-sm">
-          <div className="h-2 w-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
-          <p className="text-xs font-semibold leading-relaxed font-sans">{toastMessage}</p>
+        <div className="fixed bottom-16 right-6 z-50 bg-[#FAF8F4] border border-neutral-200 text-[#1C1A17] px-5 py-3 rounded-xl shadow-md flex items-center gap-2.5 animate-bounce-short max-w-sm">
+          <div className="h-2.5 w-2.5 bg-[#4C5E24] rounded-full shrink-0" />
+          <p className="text-xs font-semibold leading-relaxed font-mono">{toastMessage}</p>
         </div>
       )}
       
-      {/* 1. TOP GLOBAL NAVIGATION / SEMESTER HEADER */}
-      <header className="bg-slate-900 text-slate-100 border-b border-slate-800 shrink-0 sticky top-0 z-40 px-4 md:px-8 py-3.5 shadow-md">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          
-          <div className="flex items-center gap-3">
-            <div className="p-1.5 bg-slate-950 border border-slate-800 rounded-xl shadow-inner flex items-center justify-center">
-              <ModernLogo className="text-amber-500" size={30} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-display font-black text-lg tracking-tight text-white">StudyMaster</span>
-                <span className="text-[10px] font-mono tracking-widest uppercase bg-slate-800 px-2 py-0.5 rounded text-amber-500 border border-slate-700">INDEXED_DB_LOCAL</span>
-              </div>
-              <p className="text-xs text-slate-400">13-Week Rigorous Personalized Study Dashboard</p>
-            </div>
+      {/* 1. TOP GLOBAL NAVIGATION / ELEGANT HEADER BAR */}
+      <header className="bg-white/85 backdrop-blur-md border border-[#E8E3D7] text-[#1C1A17] shrink-0 sticky top-4 mx-4 md:mx-auto my-4 z-40 px-6 py-4 rounded-2xl shadow-sm max-w-7xl w-[calc(100%-2rem)] flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-[#4C5E24]/10 text-[#4C5E24] rounded-xl flex items-center justify-center">
+            <span className="text-2xl">🎓</span>
           </div>
-
-          {/* Dynamic Week Tracker Widget */}
-          <div className="flex items-center gap-4 bg-slate-950/80 px-4 py-2 rounded-xl border border-slate-800 text-xs shadow-inner min-w-[280px] md:min-w-0">
-            <div className="grow">
-              <div className="flex items-center justify-between text-[11px] font-medium text-slate-300 mb-1">
-                <span className="flex items-center gap-1 font-semibold text-amber-400">
-                  <Calendar className="h-3 w-3" /> Week {activeWeek} of 13
-                </span>
-                <span className="text-slate-400 font-mono">{progressPercent}% of Term Finished</span>
-              </div>
-              <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-500 rounded-full"
-                  style={{ width: `${progressPercent}%` }}
-                ></div>
-              </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-pixel text-[11px] tracking-tight text-[#1C1A17] uppercase">🎮 STUDYMASTER OS</span>
+              <span className="text-[7px] font-pixel tracking-wider bg-[#55a846] text-white border-2 border-[#1C1A17] px-2 py-0.5 rounded shadow-[1px_1px_0px_0px_#1C1A17]">CART_OK</span>
             </div>
-            
-            {/* Quick Export/Import Data icons or settings button */}
-            <button 
-              onClick={handleExportData}
-              title="Export database backup (JSON)"
-              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 text-[10px] font-mono font-bold"
-            >
-              <Download className="h-3.5 w-3.5 text-amber-500" />
-              <span className="hidden sm:inline">BACKUP</span>
-            </button>
-
-            {/* Action Cog to edit active simulation dates and name */}
-            <button 
-              onClick={() => setShowSettingsModal(true)} 
-              title="Calibrate study parameters"
-              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors cursor-pointer"
-            >
-              <Settings className="h-4 w-4" />
-            </button>
+            <p className="text-xs text-[#7C7468] font-bold uppercase tracking-wider">13-Week Retro Academic RPG Engine</p>
           </div>
-
         </div>
+
+        {/* Dynamic Week Tracker Widget */}
+        <div className="flex items-center gap-4 bg-white border-2 border-[#1C1A17] px-4 py-2 rounded-xl shadow-[2px_2px_0px_0px_#1C1A17] text-xs min-w-[280px] md:min-w-0">
+          <div className="grow">
+            <div className="flex items-center justify-between text-[11px] font-medium text-[#7C7468] mb-1">
+              <span className="flex items-center gap-1 font-pixel text-[8px] text-[#FF8C32]">
+                🏆 WEEK {activeWeek} / 13
+              </span>
+              <span className="text-[#55a846] font-pixel text-[8px] font-bold">{progressPercent}% SYNCED</span>
+            </div>
+            <div className="w-40 h-3.5 bg-[#FAF7F2] border-2 border-[#1C1A17] rounded-none overflow-hidden relative">
+              <div 
+                className="h-full bg-[#FF8C32] border-r-2 border-[#1C1A17] transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
+              ></div>
+            </div>
+          </div>
+          
+          {/* Quick Export/Import Data icons or settings button */}
+          <button 
+            onClick={handleExportData}
+            title="Export database backup (JSON)"
+            className="retro-btn-press p-2 bg-[#FAF6EE] text-[#1C1A17] border-2 border-[#1C1A17] rounded-lg shadow-[2px_2px_0px_0px_#1C1A17] cursor-pointer flex items-center gap-1.5 text-[8px] font-pixel"
+          >
+            <span>💾</span>
+            <span className="hidden sm:inline">SAVE</span>
+          </button>
+
+          {/* Action Cog to edit active simulation dates and name */}
+          <button 
+            onClick={() => setShowSettingsModal(true)} 
+            title="Calibrate study parameters"
+            className="retro-btn-press bg-[#FAF6EE] text-[#1C1A17] border-2 border-[#1C1A17] p-2 rounded-lg shadow-[2px_2px_0px_0px_#1C1A17] cursor-pointer hover:bg-[#FAF7F2]"
+          >
+            <span>⚙️</span>
+          </button>
+        </div>
+
       </header>
 
       {/* 2. MAIN LAYOUT STAGE */}
@@ -1746,32 +1761,31 @@ export default function App() {
         {currentView === 'dashboard' && (
           <div className="space-y-6">
             
-            {/* Global Welcome Banner / Debug Alerts */}
-            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl p-6 shadow-md border border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-amber-400 fill-amber-400" />
-                  <h2 className="text-xl font-bold font-display tracking-tight text-white">Welcome back, {customUserName}!</h2>
-                </div>
-                <p className="text-sm text-slate-300 max-w-xl">
-                  Your courses are fully mapped onto IndexedDB. Current academic workspace context running simulated date <strong className="text-amber-300 font-mono">{formatDateDDMMYYYY(simulatedTodayString)}</strong>.
+            {/* Elegant Navy/Slate Welcome Banner */}
+            <div className="bg-[#121829] border border-slate-800/80 rounded-3xl p-6 md:p-8 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-6 relative overflow-hidden shadow-md">
+              <div className="space-y-2 md:space-y-3 z-10">
+                <h2 className="text-2xl md:text-3xl font-black tracking-tight leading-none flex items-center gap-2">
+                  <span className="text-amber-400">✨</span> Welcome back, {customUserName}!
+                </h2>
+                <p className="text-sm md:text-base text-slate-300 font-medium leading-relaxed max-w-2xl">
+                  Your courses are fully mapped onto IndexedDB. Current academic workspace context running simulated date <strong className="text-[#FF8C32] font-mono font-bold bg-[#FF8C32]/10 px-2 py-0.5 rounded border border-[#FF8C32]/25">{formatDateDDMMYYYY(simulatedTodayString)}</strong>.
                 </p>
               </div>
-              
-              <div className="flex gap-2 shrink-0">
+
+              <div className="flex gap-3 items-center shrink-0 z-10 flex-wrap">
                 <button 
                   onClick={() => {
                     const todayStr = new Date().toISOString().split('T')[0];
                     setSimDate(todayStr);
-                    alert("Date calibrated to real-time clock!");
+                    alert("Simulated date synchronized to modern device clock!");
                   }}
-                  className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-medium rounded-lg border border-slate-700 hover:border-slate-600 transition-colors cursor-pointer flex items-center gap-1"
+                  className="px-4 py-2.5 bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/50 rounded-xl text-xs font-semibold text-slate-200 transition-all cursor-pointer flex items-center gap-2"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" /> Synchronize Real Clock
+                  <span className="text-sm">🔄</span> Synchronize Real Clock
                 </button>
                 <button 
                   onClick={() => setShowSettingsModal(true)}
-                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-medium rounded-lg transition-all shadow-sm font-semibold cursor-pointer"
+                  className="px-4 py-2.5 bg-[#FF8C32] hover:bg-[#E06E1A] text-slate-950 font-bold rounded-xl text-xs transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
                 >
                   Adjust Term Plan
                 </button>
@@ -1785,41 +1799,42 @@ export default function App() {
               <div className="lg:col-span-2 space-y-6">
                 
                 {/* 1. AUTO-PILOT STUDY QUEUE (Spaced Repetition System) */}
-                <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
+                <section className="bg-[#FAF6EE] border-4 border-[#1C1A17] rounded-3xl shadow-[6px_6px_0px_0px_#1C1A17] overflow-hidden animate-fade-in text-[#1C1A17]">
                   {(() => {
                     const dueItems = spacedRepetitionQueue.filter(item => item.status === 'DUE');
                     const upcomingItems = spacedRepetitionQueue.filter(item => item.status === 'UPCOMING');
 
                     return (
                       <>
-                        <div className="bg-slate-900 px-5 py-3.5 border-b border-indigo-900/40 flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-white">
-                            <div className="p-1 bg-amber-400/20 text-amber-400 rounded-md">
-                              <Clock className="h-4 w-4" />
+                        <div className="bg-[#FFF4E5] px-6 py-4.5 border-b-4 border-[#1C1A17] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div className="flex items-center gap-3">
+                            <span className="text-2xl">⏳</span>
+                            <div>
+                              <h3 className="font-pixel text-[11px] text-[#1C1A17] uppercase tracking-tight">Active Spaced-Repetition Quests</h3>
+                              <p className="text-xs text-[#7C7468] font-bold">Automated review intervals based on confidence status</p>
                             </div>
-                            <h3 className="font-display font-bold text-sm tracking-tight text-white">Auto-Pilot Spaced Repetition Queue</h3>
                           </div>
                           <div className="flex items-center gap-2">
                             {dueItems.length > 0 && (
-                              <span className="text-[10px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2.5 py-0.5 rounded-full font-mono font-semibold animate-pulse">
-                                {dueItems.length} DUE TODAY
+                              <span className="text-[7px] font-pixel bg-[#FFF0EF] border-2 border-[#1C1A17] text-[#9E2A2B] px-3 py-1 rounded shadow-[2px_2px_0px_0px_#1C1A17] animate-pulse">
+                                {dueItems.length} DUE NOW!
                               </span>
                             )}
                             {upcomingItems.length > 0 && (
-                              <span className="text-[10px] bg-sky-500/20 text-sky-300 border border-sky-500/30 px-2.5 py-0.5 rounded-full font-mono font-semibold">
-                                {upcomingItems.length} SCHEDULED
+                              <span className="text-[7px] font-pixel bg-[#EAF5FC] border-2 border-[#1C1A17] text-[#1E6B9D] px-3 py-1 rounded shadow-[2px_2px_0px_0px_#1C1A17]">
+                                {upcomingItems.length} PREPPED
                               </span>
                             )}
                           </div>
                         </div>
 
-                        <div className="p-5">
+                        <div className="p-5 md:p-6 bg-[#FAF6EE]">
                           {spacedRepetitionQueue.length === 0 ? (
-                            <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                              <CheckCircle2 className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-                              <h4 className="font-display font-semibold text-slate-700 text-sm">Perfect Spaced Repetition Standing!</h4>
-                              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                                Zero lecture subtopics are currently due for timed feedback. Configure confidence status of any submodule node inside course workspaces to schedule automated spaced reviews!
+                            <div className="text-center py-10 px-4 bg-white rounded-2xl border-4 border-[#1C1A17] shadow-[4px_4px_0px_0px_#1C1A17]">
+                              <span className="text-4xl block mb-2.5">🏆</span>
+                              <h4 className="font-pixel text-[10px] text-[#1C1A17] uppercase">All Quests Completed!</h4>
+                              <p className="text-xs text-[#7C7468] mt-1.5 max-w-sm mx-auto font-bold">
+                                You are in perfect spaced standing. Configure confidence levels of subtopics inside your workspace map to generate custom automatic review schedules!
                               </p>
                             </div>
                           ) : (
@@ -1827,54 +1842,49 @@ export default function App() {
                               
                               {/* DUE NOW ROUNDS */}
                               {dueItems.length > 0 && (
-                                <div className="space-y-2">
-                                  <h4 className="text-[10px] font-mono font-bold tracking-wider text-rose-500 uppercase flex items-center gap-1">
-                                    🚨 OVERDUE REVIEWS DUE NOW ({dueItems.length})
+                                <div className="space-y-3">
+                                  <h4 className="text-xs font-pixel text-[#9E2A2B] flex items-center gap-1.5 uppercase">
+                                    🚨 OVERDUE REVIEWS ({dueItems.length})
                                   </h4>
-                                  <div className="space-y-2.5">
+                                  <div className="space-y-3">
                                     {dueItems.map((item, qidx) => {
                                       const clrSet = getCourseColors(item.color);
                                       return (
                                         <div 
                                           key={`due-${qidx}`} 
-                                          className="group flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-red-650 hover:bg-red-700 text-white rounded-xl border border-red-700 shadow-md transition-all duration-250 animate-pulse-subtle"
+                                          className="group flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-[#FFF5F4] hover:bg-[#FFEBEA] text-[#1C1A17] rounded-2xl border-4 border-[#1C1A17] shadow-[3px_3px_0px_0px_#1C1A17] transition-all"
                                         >
-                                          <div className="flex items-start gap-3 grow min-w-0">
+                                          <div className="flex items-start gap-3.5 grow min-w-0">
                                             <input
                                               type="checkbox"
                                               checked={!!item.subTopic.completed}
                                               onChange={(e) => handleToggleSubTopicComplete(item.topicRecord, item.subIdx, e.target.checked)}
-                                              className="mt-1 h-5.5 w-5.5 rounded border-red-400 text-red-650 focus:ring-red-500 cursor-pointer accent-white shrink-0 scale-110"
+                                              className="mt-1 h-5 w-5 rounded border-2 border-[#1C1A17] text-[#9E2A2B] focus:ring-0 cursor-pointer accent-[#9E2A2B] shrink-0"
                                               title="Mark task as completed"
                                             />
-                                            <div className="space-y-1 grow min-w-0">
+                                            <div className="space-y-1.5 grow min-w-0">
                                               <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="text-[9px] font-mono font-extrabold px-1.5 py-0.5 rounded bg-white text-red-700 border border-transparent shadow-xs">
+                                                <span className="text-[7px] font-pixel bg-white text-[#1C1A17] border-2 border-[#1C1A17] px-2 py-0.5 rounded shadow-[1px_1px_0px_0px_#1C1A17]">
                                                   {item.courseCode}
                                                 </span>
-                                                <span className="text-[10px] font-mono text-red-100 font-bold">Week {item.topicRecord.weekNumber}</span>
-                                                <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping" />
-                                                <span className="text-[9px] font-extrabold text-red-100 uppercase tracking-wider">{item.subTopic.confidenceStatus} STATUS</span>
+                                                <span className="text-xs font-bold text-[#7C7468]">Week {item.topicRecord.weekNumber}</span>
+                                                <span className="h-2.5 w-2.5 rounded bg-red-500 border border-[#1C1A17] animate-ping shrink-0" />
+                                                <span className="text-[7px] font-pixel text-red-600 bg-white border-2 border-[#1C1A17] px-1.5 py-0.5 rounded">{item.subTopic.confidenceStatus} CALIBRATION</span>
                                               </div>
-                                              <h4 className="text-xs font-bold text-white leading-snug">{item.subTopic.title}</h4>
-                                              <p className="text-[10px] text-red-100/90 truncate">Topic: {item.topicRecord.topicTitle}</p>
-                                              
-                                              {/* Write Urgent Underneath */}
-                                              <p className="text-[11px] font-black uppercase text-amber-300 mt-1.5 tracking-widest flex items-center gap-1 animate-pulse">
-                                                🚨 urgent
-                                              </p>
+                                              <h4 className="text-sm font-bold text-[#1C1A17] leading-tight font-sans">{item.subTopic.title}</h4>
+                                              <p className="text-xs text-[#7C7468] font-bold">Concept Module: {item.topicRecord.topicTitle}</p>
                                             </div>
                                           </div>
 
                                           <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0 pl-8 md:pl-0">
-                                            <span className="text-[10px] text-red-200 font-mono font-extrabold bg-red-800/80 px-2 py-1 rounded border border-red-700">
-                                              Due {item.daysOverdue >= 1 ? `${item.daysOverdue}d ago` : 'today'}
+                                            <span className="text-[8px] font-pixel text-[#9E2A2B] bg-white px-2 py-1 rounded border-2 border-[#1C1A17] shadow-[1px_1px_0px_0px_#1C1A17]">
+                                              {item.daysOverdue >= 1 ? `${item.daysOverdue}d ago` : 'today'}
                                             </span>
                                             <button
                                               onClick={() => handleLaunchSubTopic(item.topicRecord.courseId, item.topicRecord.weekNumber, item.subTopic.subTopicId)}
-                                              className="px-2.5 py-1.5 bg-white hover:bg-amber-400 text-slate-900 rounded-md transition-all text-[11px] font-bold cursor-pointer flex items-center gap-1 shadow-xs"
+                                              className="retro-btn-press px-4 py-2 bg-[#9E2A2B] text-white border-2 border-[#1C1A17] rounded-lg text-xs font-pixel font-bold cursor-pointer flex items-center gap-1 shadow-[2px_2px_0px_0px_#1C1A17]"
                                             >
-                                              Review <Play className="h-2.5 w-2.5 fill-current" />
+                                              START ⚔️
                                             </button>
                                           </div>
                                         </div>
@@ -1886,49 +1896,49 @@ export default function App() {
 
                               {/* UPCOMING REVIEWS ROUNDS */}
                               {upcomingItems.length > 0 && (
-                                <div className="space-y-2">
-                                  <h4 className="text-[10px] font-mono font-bold tracking-wider text-sky-500 uppercase flex items-center gap-1">
-                                    ⏳ SCHEDULER: FUTURE REVIEWS ({upcomingItems.length})
+                                <div className="space-y-3 pt-2">
+                                  <h4 className="text-xs font-pixel text-[#1E6B9D] flex items-center gap-1.5 uppercase">
+                                    ⏳ FUTURE ADVENTURES ({upcomingItems.length})
                                   </h4>
-                                  <div className="space-y-2">
+                                  <div className="space-y-2.5">
                                     {upcomingItems.map((item, qidx) => {
                                       const clrSet = getCourseColors(item.color);
                                       const daysLeft = Math.abs(item.daysOverdue);
                                       return (
                                         <div 
                                           key={`upcoming-${qidx}`} 
-                                          className="group flex flex-col md:flex-row md:items-center justify-between gap-3 p-3 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200/60 transition-all opacity-85 hover:opacity-100"
+                                          className="group flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 bg-white hover:bg-[#FAF7F2] rounded-2xl border-4 border-[#1C1A17] shadow-[3px_3px_0px_0px_#1C1A17] transition-all"
                                         >
                                           <div className="flex items-start gap-3 grow min-w-0">
                                             <input
                                               type="checkbox"
                                               checked={!!item.subTopic.completed}
                                               onChange={(e) => handleToggleSubTopicComplete(item.topicRecord, item.subIdx, e.target.checked)}
-                                              className="mt-0.5 h-4.5 w-4.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer accent-sky-600 shrink-0"
+                                              className="mt-0.5 h-4.5 w-4.5 rounded border-2 border-[#1C1A17] text-[#1E6B9D] focus:ring-0 cursor-pointer accent-[#1E6B9D] shrink-0"
                                               title="Mark task as completed"
                                             />
-                                            <div className="space-y-0.5 grow min-w-0">
+                                            <div className="space-y-1.5 grow min-w-0">
                                               <div className="flex items-center gap-2 flex-wrap">
-                                                <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${clrSet.border} ${clrSet.bg}`}>
+                                                <span className={`text-[7px] font-pixel bg-white border-2 border-[#1C1A17] px-2 py-0.5 rounded shadow-[1px_1px_0px_0px_#1C1A17] text-[#1C1A17]`}>
                                                   {item.courseCode}
                                                 </span>
-                                                <span className="text-[10px] font-mono text-slate-400">Week {item.topicRecord.weekNumber}</span>
-                                                <span className={`h-1.5 w-1.5 rounded-full ${item.subTopic.confidenceStatus === 'RED' ? 'bg-red-500' : item.subTopic.confidenceStatus === 'YELLOW' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
-                                                <span className="text-[9px] font-semibold text-slate-500 uppercase">{item.subTopic.confidenceStatus} CALIBRATION</span>
+                                                <span className="text-xs font-bold text-[#7C7468]">Week {item.topicRecord.weekNumber}</span>
+                                                <span className={`h-2.5 w-2.5 rounded-full border border-[#1C1A17] ${item.subTopic.confidenceStatus === 'RED' ? 'bg-red-500' : item.subTopic.confidenceStatus === 'YELLOW' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                                                <span className="text-[7px] font-pixel text-[#7C7468] uppercase bg-[#FAF6EE] px-1.5 py-0.5 rounded border border-[#EAE3D5]">{item.subTopic.confidenceStatus} CALIBRATED</span>
                                               </div>
-                                              <h4 className="text-xs font-bold text-slate-750 leading-snug">{item.subTopic.title}</h4>
+                                              <h4 className="text-sm font-bold text-[#1C1A17] leading-tight font-sans">{item.subTopic.title}</h4>
                                             </div>
                                           </div>
 
                                           <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0 pl-7 md:pl-0">
-                                            <span className="text-[10px] text-slate-500 font-mono italic">
+                                            <span className="text-xs text-[#7C7468] font-bold italic">
                                               In {daysLeft} {daysLeft === 1 ? 'day' : 'days'} ({formatDateDDMMYYYY(item.subTopic.nextReviewDate)})
                                             </span>
                                             <button
                                               onClick={() => handleLaunchSubTopic(item.topicRecord.courseId, item.topicRecord.weekNumber, item.subTopic.subTopicId)}
-                                              className="px-2.5 py-1.5 bg-white hover:bg-amber-100 text-slate-700 hover:text-amber-950 border border-slate-200 hover:border-amber-300 rounded-md transition-all text-[11px] font-semibold cursor-pointer flex items-center gap-1"
+                                              className="retro-btn-press px-3.5 py-1.5 bg-white text-[#1C1A17] border-2 border-[#1C1A17] rounded-lg text-[10px] font-bold cursor-pointer flex items-center gap-1 shadow-[2px_2px_0px_0px_#1C1A17]"
                                             >
-                                              {daysLeft <= 0 ? "Practice Now" : "Practice Early"}
+                                              {daysLeft <= 0 ? "PRACTICE NOW 🛡️" : "PRE-PRACTICE Early"}
                                             </button>
                                           </div>
                                         </div>
@@ -1947,77 +1957,75 @@ export default function App() {
                 </section>
 
                 {/* 2. COURSE WORKSPACE GRID WITH CUSTOM BOOTSTRAPPER */}
-                <section className="space-y-3">
+                <section className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-display font-bold text-sm tracking-tight text-slate-900 uppercase">My Course Grid</h3>
+                    <h3 className="font-pixel text-[11px] text-[#1C1A17] uppercase tracking-tight">🎒 Academic Course Map</h3>
                     <button 
                       type="button"
                       onClick={() => setCourseEditorActive(!courseEditorActive)}
-                      className={`px-3 py-1 text-xs font-semibold rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      className={`px-4.5 py-2.5 text-[9px] font-pixel rounded-xl border-4 border-[#1C1A17] transition-all cursor-pointer flex items-center gap-1.5 shadow-[2px_2px_0px_0px_#1C1A17] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_#1C1A17] active:translate-y-[2px] active:shadow-none ${
                         courseEditorActive 
-                          ? 'bg-amber-500 text-slate-950 border-amber-500 font-bold' 
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                          ? 'bg-[#1C1A17] text-white border-[#1C1A17]' 
+                          : 'bg-[#FAF6EE] text-[#1C1A17] hover:bg-[#FAF7F2]'
                       }`}
                     >
-                      <Edit className="h-3.5 w-3.5" /> Editor Mode {courseEditorActive ? 'On' : 'Off'}
+                      🛠️ EDITOR {courseEditorActive ? 'ON' : 'OFF'}
                     </button>
                   </div>
 
                   {courseEditorActive && (
-                    <form onSubmit={handleCreateCourse} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-4 text-xs animate-fadeIn">
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <form onSubmit={handleCreateCourse} className="bg-[#FAF6EE] border-4 border-[#1C1A17] rounded-3xl p-6 space-y-4 text-xs animate-fadeIn shadow-[4px_4px_0px_0px_#1C1A17]">
+                      <div className="flex items-center justify-between border-b-2 border-[#1C1A17] pb-3">
                         <div className="flex items-center gap-2">
-                          <span className="p-1.5 bg-amber-500 text-slate-950 rounded-lg">
-                            <Plus className="h-3.5 w-3.5" />
-                          </span>
-                          <span className="font-bold text-slate-800 text-sm">Add New Term Course & Syllabus</span>
+                          <span className="text-xl">➕</span>
+                          <span className="font-pixel text-[10px] text-[#1C1A17] uppercase">BOOTSTRAP CUSTOM ADVENTURE</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 font-mono font-medium">AUTOMATED 13-WEEK SEED SETUP</span>
+                        <span className="text-[7px] font-pixel bg-[#E8F6F0] text-[#1E5D44] border-2 border-[#1C1A17] px-2.5 py-1 rounded shadow-[1px_1px_0px_0px_#1C1A17]">13-WEEK AUTO SETUP</span>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                         <div className="space-y-1">
-                          <label className="text-slate-600 font-semibold block">Unique ID (No spaces)</label>
+                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Unique ID (e.g. CS101)</label>
                           <input 
                             type="text" 
                             required 
                             placeholder="e.g. CS303, MATH101"
                             value={customCourseId}
                             onChange={(e) => setCustomCourseId(e.target.value)}
-                            className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg w-full font-mono text-slate-800 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                            className="bg-white border-2 border-[#1C1A17] px-3.5 py-2 rounded-xl w-full font-mono text-[#1C1A17] focus:outline-none focus:ring-0 transition-all"
                           />
                         </div>
                         
                         <div className="space-y-1">
-                          <label className="text-slate-600 font-semibold block">Shorthand Code</label>
+                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Shorthand Display</label>
                           <input 
                             type="text" 
                             required 
                             placeholder="e.g. CS 303, MATH 101"
                             value={customCourseCode}
                             onChange={(e) => setCustomCourseCode(e.target.value)}
-                            className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg w-full font-mono text-slate-800 focus:outline-none focus:border-amber-500"
+                            className="bg-white border-2 border-[#1C1A17] px-3.5 py-2 rounded-xl w-full font-mono text-[#1C1A17] focus:outline-none focus:ring-0 transition-all"
                           />
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-slate-600 font-semibold block">Course Title Name</label>
+                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Course Title Name</label>
                           <input 
                             type="text" 
                             required 
                             placeholder="e.g. Theory of Computation"
                             value={customCourseName}
                             onChange={(e) => setCustomCourseName(e.target.value)}
-                            className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg w-full text-slate-800 focus:outline-none focus:border-amber-500"
+                            className="bg-white border-2 border-[#1C1A17] px-3.5 py-2 rounded-xl w-full text-[#1C1A17] focus:outline-none focus:ring-0 transition-all"
                           />
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-slate-600 font-semibold block">Accent Visual Theme</label>
+                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Cartridge Color</label>
                           <select 
                             value={customCourseColor}
                             onChange={(e) => setCustomCourseColor(e.target.value)}
-                            className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg w-full text-slate-800 font-medium cursor-pointer"
+                            className="bg-white border-2 border-[#1C1A17] px-3.5 py-2 rounded-xl w-full text-[#1C1A17] font-bold cursor-pointer focus:outline-none focus:ring-0 transition-all"
                           >
                             <option value="amber">Amber Slate</option>
                             <option value="rose">Rose Crimson</option>
@@ -2035,41 +2043,39 @@ export default function App() {
                         <button 
                           type="button" 
                           onClick={() => setCourseEditorActive(false)}
-                          className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl font-bold cursor-pointer transition-colors"
+                          className="retro-btn-press px-4 py-2 bg-white text-[#1C1A17] border-2 border-[#1C1A17] rounded-lg font-bold cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                         >
-                          Cancel
+                          CANCEL
                         </button>
                         <button 
                           type="submit" 
-                          className="px-4 py-2 bg-slate-900 text-amber-400 hover:bg-amber-500 hover:text-slate-950 rounded-xl font-black transition-all cursor-pointer"
+                          className="retro-btn-press px-4 py-2 bg-[#FF8C32] text-white border-2 border-[#1C1A17] rounded-lg font-pixel text-[8px] cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                         >
-                          Bootstrap 13-Week Syllabus
+                          ⚔️ BOOTSTRAP ADVENTURE
                         </button>
                       </div>
                     </form>
                   )}
 
                   {courses.length === 0 ? (
-                    <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-8 py-10 text-center space-y-3.5">
-                      <div className="mx-auto w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center text-xl font-bold">
-                        📚
-                      </div>
+                    <div className="bg-[#FAF6EE] border-4 border-[#1C1A17] rounded-3xl p-8 py-10 text-center space-y-3.5 shadow-[6px_6px_0px_0px_#1C1A17]">
+                      <span className="text-4xl block">📦</span>
                       <div className="space-y-1">
-                        <h4 className="font-display font-medium text-slate-800 text-sm">No Active Courses Found</h4>
-                        <p className="text-slate-400 text-xs max-w-sm mx-auto leading-relaxed">
-                          Your local environment is clear! Turn on <strong>Editor Mode</strong> above to add customized courses and auto-bootstrap 13-week syllabus chapters.
+                        <h4 className="font-pixel text-[10px] text-[#1C1A17] uppercase">No Syllabus Cartridges Loaded</h4>
+                        <p className="text-[#7C7468] text-xs max-w-sm mx-auto leading-relaxed font-bold">
+                          Ready to sync? Toggle <strong>Editor Mode</strong> above to add custom course categories and auto-generate structured 13-week milestones!
                         </p>
                       </div>
                       <button
                         type="button"
                         onClick={() => setCourseEditorActive(true)}
-                        className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-sm transition-all"
+                        className="retro-btn-press px-4 py-2 bg-[#1C1A17] text-white border-2 border-[#1C1A17] rounded-lg text-xs font-bold cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                       >
-                        Create Your First Course
+                        CREATE FIRST CART 🎮
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {courses.map((course) => {
                         const stats = getCourseProgress(course.id);
                         const cls = getCourseColors(course.color);
@@ -2080,26 +2086,26 @@ export default function App() {
                               key={course.id}
                               onSubmit={handleSaveRenameCourse}
                               onClick={(e) => e.stopPropagation()}
-                              className="bg-slate-50 rounded-2xl shadow-md border-2 border-amber-400 p-5 flex flex-col justify-between h-44 relative animate-fadeIn"
+                              className="bg-white border-4 border-[#FF8C32] rounded-3xl p-5.5 flex flex-col justify-between h-52 relative animate-fadeIn shadow-[4px_4px_0px_0px_#1C1A17]"
                             >
-                              <div className="space-y-1.5">
+                              <div className="space-y-2">
                                 <div className="grid grid-cols-2 gap-2">
                                   <div>
-                                    <label className="text-[9px] font-bold text-slate-400 block uppercase">Shorthand Code</label>
+                                    <label className="text-[9px] font-pixel text-[#7C7468] block uppercase">Code</label>
                                     <input 
                                       type="text"
                                       required
                                       value={editingCourseCode}
                                       onChange={(e) => setEditingCourseCode(e.target.value)}
-                                      className="bg-white border border-slate-250 px-2 py-1 rounded text-xs w-full font-mono text-slate-800 focus:outline-none focus:border-amber-500"
+                                      className="bg-white border-2 border-[#1C1A17] px-3 py-1.5 rounded-xl text-xs w-full font-mono text-[#1C1A17] focus:outline-none"
                                     />
                                   </div>
                                   <div>
-                                    <label className="text-[9px] font-bold text-slate-400 block uppercase">Accent Color</label>
+                                    <label className="text-[9px] font-pixel text-[#7C7468] block uppercase">Theme</label>
                                     <select 
                                       value={editingCourseColor}
                                       onChange={(e) => setEditingCourseColor(e.target.value)}
-                                      className="bg-white border border-slate-250 px-1 py-1 rounded text-xs w-full text-slate-800 cursor-pointer focus:outline-none focus:border-amber-500 font-medium"
+                                      className="bg-white border-2 border-[#1C1A17] px-2 py-1.5 rounded-xl text-xs w-full text-[#1C1A17] cursor-pointer focus:outline-none font-bold"
                                     >
                                       <option value="amber">Amber</option>
                                       <option value="rose">Rose</option>
@@ -2113,30 +2119,30 @@ export default function App() {
                                   </div>
                                 </div>
                                 <div>
-                                  <label className="text-[9px] font-bold text-slate-400 block uppercase">Course Title Name</label>
+                                  <label className="text-[9px] font-pixel text-[#7C7468] block uppercase">Title</label>
                                   <input 
                                     type="text"
                                     required
                                     value={editingCourseName}
                                     onChange={(e) => setEditingCourseName(e.target.value)}
-                                    className="bg-white border border-slate-250 px-2 py-1 rounded text-xs w-full text-slate-800 focus:outline-none focus:border-amber-500"
+                                    className="bg-white border-2 border-[#1C1A17] px-3 py-1.5 rounded-xl text-xs w-full text-[#1C1A17] focus:outline-none"
                                   />
                                 </div>
                               </div>
 
-                              <div className="flex justify-end gap-1.5 pt-1">
+                              <div className="flex justify-end gap-2 pt-1">
                                 <button 
                                   type="button"
                                   onClick={() => setEditingCourseId(null)}
-                                  className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-bold text-[11px] cursor-pointer"
+                                  className="retro-btn-press px-3 py-1.5 bg-white text-[#1C1A17] border-2 border-[#1C1A17] rounded-lg font-bold text-xs cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                                 >
-                                  Cancel
+                                  CANCEL
                                 </button>
                                 <button 
                                   type="submit"
-                                  className="px-3.5 py-1 bg-amber-500 text-slate-950 hover:bg-amber-600 rounded font-black text-[11px] cursor-pointer shadow-sm"
+                                  className="retro-btn-press px-4 py-1.5 bg-[#FF8C32] text-white border-2 border-[#1C1A17] rounded-lg font-bold text-xs cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                                 >
-                                  Save
+                                  SAVE
                                 </button>
                               </div>
                             </form>
@@ -2153,69 +2159,69 @@ export default function App() {
                               setActiveFlashcardsTopicId(null);
                               setCurrentView('course');
                             }}
-                            className={`bg-white rounded-2xl shadow-sm border border-slate-200 p-5 hover:border-slate-300 transition-all cursor-pointer hover:-translate-y-0.5 group flex flex-col justify-between h-44 relative ${
-                              courseEditorActive ? 'ring-2 ring-amber-500/30 bg-slate-50/50' : ''
+                            className={`bg-white rounded-3xl border-4 border-[#1C1A17] p-5.5 hover:border-[#FF8C32] shadow-[4px_4px_0px_0px_#1C1A17] hover:shadow-[6px_6px_0px_0px_#1C1A17] hover:translate-y-[-2px] transition-all cursor-pointer group flex flex-col justify-between h-[210px] relative ${
+                              courseEditorActive ? 'opacity-80' : ''
                             }`}
                           >
                             {courseEditorActive && (
-                              <div className="absolute top-3.5 right-3.5 flex gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+                              <div className="absolute top-4 right-4 flex gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
                                 <button
                                   type="button"
                                   onClick={() => handleStartRenameCourse(course)}
                                   title={`Edit course ${course.code}`}
-                                  className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-slate-950 rounded-lg transition-all cursor-pointer shadow-sm shadow-amber-100"
+                                  className="retro-btn-press p-1.5 bg-white text-[#FF8C32] hover:bg-[#FFF4E5] border-2 border-[#1C1A17] rounded-xl cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                                 >
-                                  <Edit className="h-3.5 w-3.5" />
+                                  ✏️
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteCourse(course.id)}
                                   title={`Delete course ${course.code}`}
-                                  className="p-1.5 bg-rose-50 text-rose-500 hover:bg-rose-600 hover:text-white rounded-lg transition-all cursor-pointer shadow-sm shadow-rose-100"
+                                  className="retro-btn-press p-1.5 bg-white text-[#9E2A2B] hover:bg-[#FFF0EF] border-2 border-[#1C1A17] rounded-xl cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  🗑️
                                 </button>
                               </div>
                             )}
 
                             <div>
                               <div className="flex items-center justify-between mb-2">
-                                <span className={`text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-lg border ${cls.border} ${cls.bg}`}>
+                                <span className={`text-[8px] font-pixel font-bold px-3 py-1 rounded border-2 border-[#1C1A17] shadow-[2px_2px_0px_0px_#1C1A17] ${cls.bg} text-[#1C1A17]`}>
                                   {course.code}
                                 </span>
                                 {!courseEditorActive && (
-                                  <div className="text-[11px] font-mono text-slate-400 font-medium group-hover:text-amber-500 transition-colors flex items-center gap-1">
-                                    Workspace <ChevronRight className="h-3 w-3" />
+                                  <div className="text-[8px] font-pixel text-[#7C7468] group-hover:text-[#FF8C32] transition-colors flex items-center gap-1">
+                                    LOAD 🕹️
                                   </div>
                                 )}
                               </div>
                               
-                              <h4 className="text-base font-bold text-slate-900 group-hover:text-slate-800 tracking-tight leading-tight mb-2 pr-6">
+                              <h4 className="text-lg font-bold text-[#1C1A17] group-hover:text-[#FF8C32] tracking-tight leading-tight mb-2 pr-6 transition-colors">
                                 {course.name}
                               </h4>
                             </div>
 
                             {/* Stat Indicators Section */}
                             <div className="space-y-2">
-                              <div className="flex items-center justify-between text-xs text-slate-500">
-                                <span className="font-medium">Mastery Quotient (Completed Quizzes)</span>
-                                <span className="font-mono font-bold text-slate-800">{stats.completionRate}%</span>
+                              <div className="flex items-center justify-between text-xs text-[#7C7468]">
+                                <span className="font-bold uppercase tracking-wider text-[10px]">Mastery Quotient</span>
+                                <span className="font-pixel text-[8px] font-black text-[#1C1A17]">{stats.completionRate}%</span>
                               </div>
                               
                               {/* Complete bar indicator */}
-                              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div className="w-full h-3.5 bg-[#FAF7F2] border-2 border-[#1C1A17] rounded-none overflow-hidden relative">
                                 <div 
-                                  className={`h-full ${cls.accent} transition-all duration-300 rounded-full`}
+                                  className={`h-full ${cls.accent} border-r-2 border-[#1C1A17] transition-all duration-300`}
                                   style={{ width: `${stats.completionRate}%` }}
                                 />
                               </div>
 
                               {/* Bullet metrics counts */}
-                              <div className="flex justify-between items-center text-[10px] font-mono text-slate-400 pt-1">
-                                <span className="flex items-center gap-0.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> {stats.confidenceCount.GREEN} Green</span>
-                                <span className="flex items-center gap-0.5"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> {stats.confidenceCount.YELLOW} Yellow</span>
-                                <span className="flex items-center gap-0.5"><span className="h-1.5 w-1.5 rounded-full bg-red-500" /> {stats.confidenceCount.RED} Red</span>
-                                <span>{stats.totalSubtopics} Topics</span>
+                              <div className="flex justify-between items-center text-[9px] font-mono font-bold text-[#7C7468] pt-1">
+                                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500 border border-[#1C1A17]" /> {stats.confidenceCount.GREEN}</span>
+                                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400 border border-[#1C1A17]" /> {stats.confidenceCount.YELLOW}</span>
+                                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500 border border-[#1C1A17]" /> {stats.confidenceCount.RED}</span>
+                                <span className="font-pixel text-[7px] bg-[#FAF6EE] border-2 border-[#1C1A17] px-1 py-0.5 rounded shadow-[1px_1px_0px_0px_#1C1A17]">{stats.totalSubtopics} STAGES</span>
                               </div>
                             </div>
                           </div>
@@ -2224,28 +2230,23 @@ export default function App() {
                     </div>
                   )}
                 </section>
-
               </div>
 
-              {/* Right Grid Column: Deadlines Urgency Engine */}
+              {/* Right Grid Column: Deadlines Urgency Engine & Knowledge Gaps */}
               <div className="space-y-6">
-                
-                {/* DYNAMIC URGENCY ENGINE */}
-                <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="bg-slate-950 px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-white">
-                      <div className="p-1 bg-rose-500/10 text-rose-400 rounded-md">
-                        <AlertCircle className="h-4 w-4" />
-                      </div>
-                      <h3 className="font-display font-bold text-sm tracking-tight">Dynamic Urgency Deadlines</h3>
+                <section className="bg-white rounded-3xl border-4 border-[#1C1A17] overflow-hidden shadow-[4px_4px_0px_0px_#1C1A17]">
+                  <div className="bg-[#FAF6EE] px-6 py-4 border-b-4 border-[#1C1A17] flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-[#1C1A17]">
+                      <span className="text-xl">⏳</span>
+                      <h3 className="font-pixel text-[10px] uppercase tracking-tight">URGENCY RADAR</h3>
                     </div>
                   </div>
 
-                  <div className="p-5 space-y-4">
+                  <div className="p-5.5 space-y-4 bg-white">
                     
                     {/* Simplified Form Inline to Add Course Deadlines */}
-                    <form onSubmit={handleAddDeadline} className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3 text-xs">
-                      <p className="font-semibold text-slate-700">Add Academic Deadline</p>
+                    <form onSubmit={handleAddDeadline} className="bg-[#FAF6EE] p-4.5 rounded-2xl border-2 border-[#1C1A17] space-y-3.5 text-xs shadow-[2px_2px_0px_0px_#1C1A17]">
+                      <p className="font-pixel text-[8px] text-[#1C1A17] uppercase">LOG NEW DEADLINE</p>
                       
                       <div className="space-y-2">
                         <input 
@@ -2254,14 +2255,14 @@ export default function App() {
                           placeholder="Problem Set 3, Essay, Project Draft..."
                           value={newDeadlineTitle}
                           onChange={(e) => setNewDeadlineTitle(e.target.value)}
-                          className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                          className="w-full bg-white px-3.5 py-2 border-2 border-[#1C1A17] rounded-xl text-[#1C1A17] focus:outline-none transition-all font-sans"
                         />
                         
                         <div className="grid grid-cols-2 gap-2">
                           <select 
                             value={newDeadlineCourseId}
                             onChange={(e) => setNewDeadlineCourseId(e.target.value)}
-                            className="bg-white px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none"
+                            className="bg-white px-3.5 py-2 border-2 border-[#1C1A17] rounded-xl text-[#1C1A17] font-bold focus:outline-none transition-all cursor-pointer font-sans"
                           >
                             {courses.map(c => (
                               <option key={c.id} value={c.id}>{c.code}</option>
@@ -2272,7 +2273,7 @@ export default function App() {
                             type="time" 
                             value={newDeadlineTime}
                             onChange={(e) => setNewDeadlineTime(e.target.value)}
-                            className="bg-white px-2 py-1.5 border border-slate-200 rounded-md focus:outline-none"
+                            className="bg-white px-3.5 py-2 border-2 border-[#1C1A17] rounded-xl text-[#1C1A17] focus:outline-none transition-all font-sans"
                           />
                         </div>
 
@@ -2281,13 +2282,13 @@ export default function App() {
                             type="date" 
                             value={newDeadlineDate}
                             onChange={(e) => setNewDeadlineDate(e.target.value)}
-                            className="bg-white px-2 py-1 border border-slate-200 rounded-md focus:outline-none"
+                            className="bg-white px-3.5 py-2 border-2 border-[#1C1A17] rounded-xl text-[#1C1A17] focus:outline-none transition-all font-sans"
                           />
                           <button 
                             type="submit"
-                            className="px-3 py-1 bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-white font-medium rounded-md transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                            className="retro-btn-press px-4 py-2 bg-[#FF8C32] text-white font-pixel text-[8px] border-2 border-[#1C1A17] rounded-lg cursor-pointer flex items-center gap-1 shrink-0 shadow-[2px_2px_0px_0px_#1C1A17]"
                           >
-                            <Plus className="h-3.5 w-3.5" /> Save
+                            ➕ ADD
                           </button>
                         </div>
                       </div>
@@ -2296,7 +2297,7 @@ export default function App() {
                     {/* Deadline Cards List */}
                     <div className="space-y-3.5 max-h-96 overflow-y-auto pr-1">
                       {sortedDeadlines.length === 0 ? (
-                        <p className="text-center text-xs text-slate-400 py-4 italic">No deadline objects monitored yet. Set one above!</p>
+                        <p className="text-center text-[9px] font-pixel text-slate-400 py-4 uppercase">NO DEADLINES ACTIVE 🛡️</p>
                       ) : (
                         sortedDeadlines.map((dl) => {
                           const targetCourse = courses.find(c => c.id === dl.courseId);
@@ -2309,12 +2310,12 @@ export default function App() {
                           return (
                             <div 
                               key={dl.id}
-                              className={`p-3.5 rounded-xl border transition-all ${
+                              className={`p-4 rounded-2xl border-2 border-[#1C1A17] transition-all shadow-[2px_2px_0px_0px_#1C1A17] ${
                                 dl.completed 
-                                  ? 'bg-slate-100 border-slate-200 opacity-65 grayscale' 
+                                  ? 'bg-[#FAF7F2] opacity-60 grayscale' 
                                   : stat.level === 'CRITICAL' 
-                                    ? 'bg-red-50/70 border-red-200 shadow-sm shadow-red-100' 
-                                    : 'bg-white border-slate-200'
+                                    ? 'bg-[#FFF5F4] border-red-500' 
+                                    : 'bg-white hover:bg-[#FAF7F2]/30'
                               }`}
                             >
                               <div className="flex items-start justify-between gap-3">
@@ -2325,18 +2326,18 @@ export default function App() {
                                     checked={dl.completed}
                                     id={`checkbox-${dl.id}`}
                                     onChange={(e) => handleToggleDeadline(dl.id!, e.target.checked)}
-                                    className="mt-1 h-4 w-4 rounded text-amber-500 focus:ring-amber-500 border-slate-300 cursor-pointer accent-amber-500"
+                                    className="mt-1 h-4 w-4 border-2 border-[#1C1A17] text-[#FF8C32] rounded focus:ring-0 cursor-pointer accent-[#FF8C32]"
                                   />
                                   <div>
-                                    <h4 className={`text-xs font-bold text-slate-900 leading-tight ${dl.completed ? 'line-through text-slate-400' : ''}`}>
+                                    <h4 className={`text-xs font-bold text-[#1C1A17] leading-tight ${dl.completed ? 'line-through text-[#7C7468]' : ''}`}>
                                       {dl.title}
                                     </h4>
-                                    <div className="flex items-center gap-1.5 mt-1">
-                                      <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border ${clsMap.border} ${clsMap.bg}`}>
+                                    <div className="flex items-center gap-1.5 mt-1.5">
+                                      <span className={`text-[8px] font-pixel px-2 py-0.5 rounded border-2 border-[#1C1A17] shadow-[1px_1px_0px_0px_#1C1A17] ${clsMap.bg} text-[#1C1A17]`}>
                                         {courseCode}
                                       </span>
-                                      <span className="text-[10px] text-slate-400 font-mono">
-                                        {formatDateDDMMYYYY(dl.dueDate)} {new Date(dl.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      <span className="text-[10px] text-[#7C7468] font-mono font-semibold">
+                                        📅 {formatDateDDMMYYYY(dl.dueDate)} {new Date(dl.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                       </span>
                                     </div>
                                   </div>
@@ -2345,17 +2346,17 @@ export default function App() {
                                 <button 
                                   type="button"
                                   onClick={() => handleDeleteDeadline(dl.id!)}
-                                  className="text-slate-300 hover:text-rose-600 p-0.5 transition-colors cursor-pointer"
+                                  className="text-[#7C7468] hover:text-[#9E2A2B] p-1 transition-colors cursor-pointer text-sm"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  ❌
                                 </button>
                               </div>
 
                               {!dl.completed && (
                                 <div className="mt-2.5 flex items-center justify-between text-[11px]">
-                                  <span className="text-slate-400 font-medium">Status</span>
-                                  <span className={`px-2 py-0.5 rounded font-mono font-semibold border ${stat.color}`}>
-                                    {stat.text}
+                                  <span className="text-[#7C7468] font-bold uppercase text-[9px]">Status</span>
+                                  <span className={`px-2 py-0.5 rounded border-2 border-[#1C1A17] font-pixel text-[7px] shadow-[1px_1px_0px_0px_#1C1A17] ${stat.level === 'CRITICAL' ? 'bg-[#FFF0EF] text-[#9E2A2B]' : 'bg-[#FAF7F2] text-[#1C1A17]'}`}>
+                                    {stat.text.toUpperCase()}
                                   </span>
                                 </div>
                               )}
@@ -2369,23 +2370,20 @@ export default function App() {
                 </section>
 
                 {/* URGENT REVIEW QUEUE */}
-                <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="bg-slate-950 px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-white">
-                      <div className="p-1 bg-amber-500/10 text-amber-400 rounded-md">
-                        <BookMarked className="h-4 w-4" />
-                      </div>
+                <section className="bg-white rounded-3xl border-4 border-[#1C1A17] overflow-hidden shadow-[4px_4px_0px_0px_#1C1A17]">
+                  <div className="bg-[#FAF6EE] px-6 py-4 border-b-4 border-[#1C1A17] flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-[#1C1A17]">
+                      <span className="text-xl">🧬</span>
                       <div>
-                        <h3 className="font-display font-bold text-sm tracking-tight">Urgent Prerequisite Reviews</h3>
-                        <p className="text-[10px] text-slate-400">Prerequisites lacking clarity are cataloged here</p>
+                        <h3 className="font-pixel text-[10px] uppercase tracking-tight">KNOWLEDGE GAPS</h3>
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-5 space-y-4">
+                  <div className="p-5.5 space-y-4 bg-white">
                     {/* Inline Form to Add Prerequisite Review Node */}
-                    <form onSubmit={handleAddUrgentReview} className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3 text-xs">
-                      <p className="font-semibold text-slate-700 font-display">Flag Hidden Gap or Prerequisite</p>
+                    <form onSubmit={handleAddUrgentReview} className="bg-[#FAF6EE] p-4.5 rounded-2xl border-2 border-[#1C1A17] space-y-3.5 text-xs shadow-[2px_2px_0px_0px_#1C1A17]">
+                      <p className="font-pixel text-[8px] text-[#1C1A17] uppercase">FLAG SYLLABUS GAP</p>
 
                       <div className="space-y-2">
                         <input 
@@ -2394,7 +2392,7 @@ export default function App() {
                           placeholder="e.g. Partial Fractions, Matrix Expansion..."
                           value={newUrgentTitle}
                           onChange={(e) => setNewUrgentTitle(e.target.value)}
-                          className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                          className="w-full bg-white px-3.5 py-2 border-2 border-[#1C1A17] rounded-xl text-[#1C1A17] focus:outline-none transition-all font-sans"
                         />
 
                         <input 
@@ -2402,16 +2400,16 @@ export default function App() {
                           placeholder="Short description/notes (e.g. missing formula)..."
                           value={newUrgentNotes}
                           onChange={(e) => setNewUrgentNotes(e.target.value)}
-                          className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-md focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                          className="w-full bg-white px-3.5 py-2 border-2 border-[#1C1A17] rounded-xl text-[#1C1A17] focus:outline-none transition-all font-sans"
                         />
                         
                         <div className="flex items-center gap-2 justify-between">
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-400">Class:</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-[#1C1A17] font-bold uppercase">Class:</span>
                             <select 
                               value={newUrgentCourseId}
                               onChange={(e) => setNewUrgentCourseId(e.target.value)}
-                              className="bg-white px-1.5 py-1.5 border border-slate-200 rounded-md focus:outline-none text-[11px] font-mono cursor-pointer"
+                              className="bg-white px-3 py-1.5 border-2 border-[#1C1A17] rounded-xl text-[#1C1A17] focus:outline-none text-[11px] font-bold cursor-pointer font-sans"
                             >
                               {courses.map(c => (
                                 <option key={c.id} value={c.id}>{c.code}</option>
@@ -2421,9 +2419,9 @@ export default function App() {
 
                           <button 
                             type="submit"
-                            className="px-3 py-1 bg-slate-900 hover:bg-amber-500 hover:text-slate-950 text-white font-medium rounded-md transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                            className="retro-btn-press px-4 py-2 bg-[#FF8C32] text-white font-pixel text-[8px] border-2 border-[#1C1A17] rounded-lg cursor-pointer flex items-center gap-1 shrink-0 shadow-[2px_2px_0px_0px_#1C1A17]"
                           >
-                            <Plus className="h-3.5 w-3.5" /> Track Gap
+                            ⚡ GAP-TRACK
                           </button>
                         </div>
                       </div>
@@ -2432,7 +2430,7 @@ export default function App() {
                     {/* Prerequisite reviews list */}
                     <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                       {urgentReviews.length === 0 ? (
-                        <p className="text-center text-xs text-slate-400 py-4 italic">No priority knowledge gaps marked yet. Smooth sailing!</p>
+                        <p className="text-center text-[9px] font-pixel text-[#7C7468] py-4 uppercase">NO PREREQUISITE GAPS AT PRESENT 💮</p>
                       ) : (
                         // Sort by completed status so incomplete stay on top
                         [...urgentReviews]
@@ -2445,10 +2443,10 @@ export default function App() {
                             return (
                               <div 
                                 key={ur.id}
-                                className={`p-3 rounded-xl border transition-all ${
+                                className={`p-4 rounded-2xl border-2 border-[#1C1A17] transition-all shadow-[2px_2px_0px_0px_#1C1A17] ${
                                   ur.completed 
-                                    ? 'bg-slate-50 border-slate-150 opacity-60' 
-                                    : 'bg-white border-slate-200 hover:shadow-xs'
+                                    ? 'bg-[#FAF7F2] opacity-60 grayscale' 
+                                    : 'bg-white hover:bg-[#FAF7F2]/30'
                                 }`}
                               >
                                 <div className="flex items-start justify-between gap-3">
@@ -2458,25 +2456,25 @@ export default function App() {
                                       id={`urgent-review-${ur.id}`}
                                       checked={ur.completed}
                                       onChange={(e) => handleToggleUrgentReview(ur.id!, e.target.checked)}
-                                      className="mt-1 h-4 w-4 rounded text-amber-500 focus:ring-amber-500 border-slate-300 cursor-pointer accent-amber-500"
+                                      className="mt-1 h-4 w-4 border-2 border-[#1C1A17] text-[#FF8C32] rounded focus:ring-0 cursor-pointer accent-[#FF8C32]"
                                     />
                                     <div>
-                                      <h4 className={`text-xs font-bold text-slate-900 leading-tight ${ur.completed ? 'line-through text-slate-400' : ''}`}>
+                                      <h4 className={`text-xs font-bold text-[#1C1A17] leading-tight ${ur.completed ? 'line-through text-[#7C7468]' : ''}`}>
                                         {ur.title}
                                       </h4>
                                       
                                       {ur.notes && (
-                                        <p className={`text-[11px] mt-0.5 text-slate-500 leading-relaxed ${ur.completed ? 'line-through text-slate-400' : ''}`}>
+                                        <p className={`text-[11px] mt-1 text-[#7C7468] leading-relaxed ${ur.completed ? 'line-through opacity-70' : ''}`}>
                                           {ur.notes}
                                         </p>
                                       )}
 
-                                      <div className="flex items-center gap-1.5 mt-1.5">
-                                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded border ${clsMap.border} ${clsMap.bg}`}>
+                                      <div className="flex items-center gap-1.5 mt-2">
+                                        <span className={`text-[8px] font-pixel px-2 py-0.5 rounded border-2 border-[#1C1A17] shadow-[1px_1px_0px_0px_#1C1A17] ${clsMap.bg} text-[#1C1A17]`}>
                                           {courseCode}
                                         </span>
-                                        <span className="text-[10px] text-slate-400 font-mono scale-95 origin-left">
-                                          Prerequisite Gap
+                                        <span className="text-[9px] text-[#7C7468] font-bold uppercase tracking-wide">
+                                          PREREQUISITE GAP
                                         </span>
                                       </div>
                                     </div>
@@ -2485,9 +2483,9 @@ export default function App() {
                                   <button 
                                     type="button"
                                     onClick={() => handleDeleteUrgentReview(ur.id!)}
-                                    className="text-slate-300 hover:text-rose-600 p-0.5 transition-colors cursor-pointer"
+                                    className="text-[#7C7468] hover:text-[#9E2A2B] p-1 transition-colors cursor-pointer text-sm"
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    ❌
                                   </button>
                                 </div>
                               </div>
@@ -2521,34 +2519,34 @@ export default function App() {
           <div className="flex-1 flex flex-col gap-4">
             
             {/* Top Workspace Bar */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="bg-white border-4 border-[#1C1A17] rounded-3xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-[4px_4px_0px_0px_#1C1A17]">
               <div className="flex items-center gap-3">
                 <button 
                   onClick={() => setCurrentView('dashboard')}
-                  className="p-1 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-100 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5"
+                  className="retro-btn-press px-4 py-2 bg-white hover:bg-[#FAF7F2] text-[#1C1A17] border-2 border-[#1C1A17] rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-[2px_2px_0px_0px_#1C1A17]"
                 >
-                  <ArrowLeft className="h-4 w-4" /> Exit Workspace
+                  <ArrowLeft className="h-4 w-4 text-[#FF8C32]" /> Exit Workspace
                 </button>
-                <div className="h-6 w-px bg-slate-200 hidden md:block" />
+                <div className="h-6 w-px bg-[#1C1A17] hidden md:block" />
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs font-mono font-bold px-2 py-0.5 border rounded ${getCourseColors(activeCourse.color).border} ${getCourseColors(activeCourse.color).bg}`}>
+                    <span className={`text-[8px] font-pixel px-2.5 py-0.5 border-2 border-[#1C1A17] rounded shadow-[1px_1px_0px_0px_#1C1A17] ${getCourseColors(activeCourse.color).bg} ${getCourseColors(activeCourse.color).text}`}>
                       {activeCourse.code}
                     </span>
-                    <h3 className="font-display font-bold text-slate-900 tracking-tight text-sm md:text-base">{activeCourse.name}</h3>
+                    <h3 className="font-pixel text-xs text-[#1C1A17] uppercase tracking-tight">{activeCourse.name}</h3>
                   </div>
-                  <p className="text-xs text-slate-400">Week accordion menu lists custom curriculum guidelines</p>
+                  <p className="text-[10px] text-[#7C7468] font-bold mt-0.5">Week accordion menu lists custom curriculum guidelines</p>
                 </div>
               </div>
 
               {/* Course-level Action Panel */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <button 
                   onClick={() => setSyllabusEditorMode(!syllabusEditorMode)}
-                  className={`px-3.5 py-1.5 rounded-lg text-[11.5px] font-mono font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                  className={`retro-btn-press px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border-2 border-[#1C1A17] shadow-[2px_2px_0px_0px_#1C1A17] ${
                     syllabusEditorMode 
-                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-400 ring-2 ring-amber-500/10' 
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-250'
+                      ? 'bg-[#FF8C32] text-white' 
+                      : 'bg-white hover:bg-[#FAF7F2] text-[#1C1A17]'
                   }`}
                   title="Toggle custom detailed structure, topic addition, and syllabus editing"
                 >
@@ -2558,9 +2556,9 @@ export default function App() {
                 {syllabusEditorMode ? (
                   <button 
                     onClick={() => handleAddSyllabusTopic(activeCourse.id, activeCourseTopics)}
-                    className="px-3.5 py-1.5 bg-slate-900 text-amber-400 hover:bg-slate-800 border border-slate-800 rounded-lg text-xs font-bold cursor-pointer transition-colors flex items-center gap-1"
+                    className="retro-btn-press px-4 py-2 bg-[#1C1A17] text-white hover:bg-[#322F2A] rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center gap-1 border-2 border-[#1C1A17] shadow-[2px_2px_0px_0px_#1C1A17]"
                   >
-                    <Plus className="h-3.5 w-3.5" /> New Topic Week
+                    <Plus className="h-3.5 w-3.5 text-[#FF8C32]" /> New Topic Week
                   </button>
                 ) : (
                   <button 
@@ -2568,9 +2566,9 @@ export default function App() {
                       setNewSubTopicWeek(1);
                       setShowAddSubTopicModal(true);
                     }}
-                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-lg text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1"
+                    className="retro-btn-press px-4 py-2 bg-[#1C1A17] hover:bg-[#322F2A] text-white rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center gap-1 border-2 border-[#1C1A17] shadow-[2px_2px_0px_0px_#1C1A17]"
                   >
-                    <Plus className="h-3.5 w-3.5" /> Add Sub-Topic
+                    <Plus className="h-3.5 w-3.5 text-[#FF8C32]" /> Add Sub-Topic
                   </button>
                 )}
               </div>
@@ -2581,12 +2579,12 @@ export default function App() {
               
               {/* SIDEBAR NAVIGATION PANE: LEFT (Column 4 of 12) */}
               {!sidebarHidden && (
-                <nav className="md:col-span-4 bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3 h-[600px] overflow-y-auto relative">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 sticky top-0 bg-white z-10">
-                    <span className="font-display font-bold text-xs tracking-wider uppercase text-slate-400">13-Week Syllabus Accordion</span>
+                <nav className="md:col-span-4 bg-white border-4 border-[#1C1A17] rounded-3xl p-5 flex flex-col gap-3.5 h-[650px] overflow-y-auto relative shadow-[4px_4px_0px_0px_#1C1A17]">
+                  <div className="flex items-center justify-between pb-2 border-b-2 border-[#1C1A17] sticky top-0 bg-white z-10">
+                    <span className="font-pixel text-[8px] uppercase text-[#7C7468]">13-Week Syllabus Accordion</span>
                     <button 
                       onClick={() => setSidebarHidden(true)}
-                      className="p-1 text-slate-400 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded transition-all cursor-pointer"
+                      className="p-1 text-[#7C7468] hover:text-[#9E2A2B] bg-[#FAF7F2] rounded-lg transition-all cursor-pointer"
                       title="Collapse Navigation sidebar"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -2594,12 +2592,12 @@ export default function App() {
                   </div>
 
                   {/* 13-Week Accordion */}
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {activeCourseTopics.map((topicRec) => {
                       const isExpanded = !!expandedWeeks[topicRec.weekNumber];
                       
                       return (
-                        <div key={topicRec.id} className={`border rounded-lg overflow-hidden transition-all ${syllabusEditorMode ? 'border-amber-300 ring-1 ring-amber-400/10' : 'border-slate-100'}`}>
+                        <div key={topicRec.id} className={`border rounded-2xl overflow-hidden transition-all ${syllabusEditorMode ? 'border-[#FF8C32] ring-1 ring-[#FF8C32]/10 bg-white' : 'border-[#EAE3D5] bg-white'}`}>
                           <button
                             type="button"
                             onClick={() => {
@@ -2608,7 +2606,7 @@ export default function App() {
                                 [topicRec.weekNumber]: !prev[topicRec.weekNumber]
                               }));
                             }}
-                            className={`w-full flex items-center justify-between p-2.5 text-left transition-colors cursor-pointer ${syllabusEditorMode ? 'bg-amber-50/20 hover:bg-amber-150/10' : 'bg-slate-50 hover:bg-slate-100'}`}
+                            className={`w-full flex items-center justify-between p-3.5 text-left transition-colors cursor-pointer ${syllabusEditorMode ? 'bg-[#FFF4E5]/10 hover:bg-[#FFF4E5]/20' : 'bg-[#FAF7F2]/40 hover:bg-[#FAF7F2]'}`}
                           >
                             <div className="flex items-center gap-1.5 justify-between w-full pr-1">
                               {renamingTopicId === topicRec.id ? (
@@ -2617,7 +2615,7 @@ export default function App() {
                                     type="text"
                                     value={renamingTopicValue}
                                     onChange={(e) => setRenamingTopicValue(e.target.value)}
-                                    className="grow text-xs bg-white border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-amber-500 font-bold text-slate-800"
+                                    className="grow text-xs bg-white border border-[#EAE3D5] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-[#FF8C32] font-bold text-[#1C1A17]"
                                     placeholder="Enter topic title..."
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter') {
@@ -2632,14 +2630,14 @@ export default function App() {
                                   <button
                                     type="button"
                                     onClick={() => handleSaveTopicRename(topicRec.id!)}
-                                    className="px-2 py-1 bg-amber-500 text-slate-950 rounded text-[10px] font-bold cursor-pointer hover:bg-amber-400 shrink-0"
+                                    className="px-2.5 py-1.5 bg-[#FF8C32] text-white rounded-lg text-[10px] font-bold cursor-pointer hover:bg-[#E06E1A] shrink-0 shadow-xs"
                                   >
                                     Save
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => setRenamingTopicId(null)}
-                                    className="px-2 py-1 bg-slate-200 text-slate-600 rounded text-[10px] font-bold cursor-pointer hover:bg-slate-300 shrink-0"
+                                    className="px-2.5 py-1.5 bg-white text-[#7C7468] border border-[#EAE3D5] rounded-lg text-[10px] font-bold cursor-pointer hover:bg-[#FAF7F2] shrink-0"
                                   >
                                     Cancel
                                   </button>
@@ -2650,29 +2648,33 @@ export default function App() {
                                     className="space-y-0.5 grow cursor-pointer select-none"
                                     onDoubleClick={(e) => {
                                       e.stopPropagation();
-                                      handleRenameTopic(topicRec.id!, topicRec.topicTitle);
+                                      if (syllabusEditorMode) {
+                                        handleRenameTopic(topicRec.id!, topicRec.topicTitle);
+                                      }
                                     }}
-                                    title="Double click to rename topic"
+                                    title={syllabusEditorMode ? "Double click to rename topic" : undefined}
                                   >
-                                    <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">WEEK {topicRec.weekNumber}</span>
-                                    <h5 className="text-xs font-bold text-slate-850 truncate max-w-[180px] leading-tight flex items-center gap-1 hover:text-amber-600 transition-colors">
+                                    <span className="text-[9px] font-mono font-black text-[#7C7468] uppercase tracking-wider">WEEK {topicRec.weekNumber}</span>
+                                    <h5 className="text-xs font-bold text-[#1C1A17] truncate max-w-[180px] leading-tight flex items-center gap-1 hover:text-[#FF8C32] transition-colors">
                                       {topicRec.topicTitle || `Week ${topicRec.weekNumber} Modules`}
                                     </h5>
                                   </div>
                                   <div className="flex items-center gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleRenameTopic(topicRec.id!, topicRec.topicTitle);
-                                      }}
-                                      className="p-1 px-1.5 hover:bg-slate-200 hover:bg-amber-100 text-[10px] rounded text-slate-600 hover:text-amber-950 transition-all cursor-pointer font-bold flex items-center gap-0.5"
-                                      title="Rename Syllabus Topic"
-                                    >
-                                      <span>✏️</span>
-                                      <span className="hidden sm:inline">Rename</span>
-                                    </button>
-                                    {isExpanded ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
+                                    {syllabusEditorMode && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRenameTopic(topicRec.id!, topicRec.topicTitle);
+                                        }}
+                                        className="p-1 px-1.5 hover:bg-[#FFF4E5] text-[10px] rounded-lg text-[#7C7468] hover:text-[#FF8C32] transition-all cursor-pointer font-bold flex items-center gap-0.5 border border-transparent hover:border-[#FFE1B8]"
+                                        title="Rename Syllabus Topic"
+                                      >
+                                        <span>✏️</span>
+                                        <span className="hidden sm:inline">Rename</span>
+                                      </button>
+                                    )}
+                                    {isExpanded ? <ChevronDown className="h-4 w-4 text-[#7C7468]" /> : <ChevronRight className="h-4 w-4 text-[#7C7468]" />}
                                   </div>
                                 </>
                               )}
@@ -2681,10 +2683,10 @@ export default function App() {
 
                           {/* Nested week subcomponents */}
                           {isExpanded && (
-                            <div className="p-2 bg-white space-y-1.5 border-t border-slate-100">
-                                            {/* Subtopic nodes */}
+                            <div className="p-3 bg-white space-y-2 border-t border-[#EAE3D5]">
+                              {/* Subtopic nodes */}
                               {topicRec.subTopics?.length === 0 ? (
-                                <p className="text-[10px] text-slate-400 px-2 italic">No notes assigned yet.</p>
+                                <p className="text-[10px] text-[#7C7468] px-2 py-1 italic">No nodes assigned yet.</p>
                               ) : (
                                 topicRec.subTopics?.map((sub, sidx) => {
                                   const isActive = activeSubTopicId === sub.subTopicId;
@@ -2700,16 +2702,16 @@ export default function App() {
                                   let containerBgClass = '';
                                   if (isOverdue) {
                                     containerBgClass = isActive 
-                                      ? 'bg-red-700 text-white font-bold border border-red-650' 
-                                      : 'bg-red-500 hover:bg-red-600 text-white font-bold shadow-xs';
+                                      ? 'bg-[#9E2A2B] text-white border-2 border-[#1C1A17] font-bold shadow-xs' 
+                                      : 'bg-[#FFF5F4] border border-[#FAD3D1] text-[#9E2A2B] hover:bg-[#FFEBEA] font-bold shadow-xs';
                                   } else if (sub.completed) {
                                     containerBgClass = isActive
-                                      ? 'bg-slate-800 text-slate-300'
-                                      : 'hover:bg-slate-50 text-slate-400 hover:text-slate-500';
+                                      ? 'bg-[#1C1A17] text-[#FFF4E5] border border-[#1C1A17]'
+                                      : 'bg-[#FAF7F2] hover:bg-[#FAF7F2]/80 text-[#7C7468]/70 border border-[#EAE3D5]/50';
                                   } else {
                                     containerBgClass = isActive 
-                                      ? 'bg-slate-900 text-white font-semibold' 
-                                      : 'hover:bg-slate-50 text-slate-700';
+                                      ? 'bg-[#FF8C32] text-white font-bold border border-[#FF8C32]' 
+                                      : 'bg-white hover:bg-[#FAF7F2] border border-[#EAE3D5] text-[#1C1A17]';
                                   }
 
                                   return (
@@ -2720,18 +2722,18 @@ export default function App() {
                                       onDragOver={(e) => handleSubTopicDragOver(e, sidx)}
                                       onDrop={(e) => handleSubTopicDrop(e, topicRec.id!, sidx)}
                                       onDragEnd={handleSubTopicDragEnd}
-                                      className={`flex items-center gap-1.5 justify-between rounded-md p-1.5 transition-all text-xs cursor-grab active:cursor-grabbing ${containerBgClass} ${isBeingDragged ? 'opacity-40 border border-dashed border-amber-500' : ''}`}
+                                      className={`flex items-center gap-1.5 justify-between rounded-xl p-2 transition-all text-xs cursor-grab active:cursor-grabbing ${containerBgClass} ${isBeingDragged ? 'opacity-40 border border-dashed border-[#FF8C32]' : ''}`}
                                     >
                                       {/* Drag handle & checkbox */}
                                       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                        <span className={`p-0.5 rounded transition-colors ${isActive ? 'text-slate-400' : 'text-slate-300 hover:text-slate-500'}`} title="Drag to reorder">
+                                        <span className={`p-0.5 rounded transition-colors ${isActive ? 'text-white/80' : 'text-[#7C7468] hover:text-[#1C1A17]'}`} title="Drag to reorder">
                                           <GripVertical className="h-3.5 w-3.5" />
                                         </span>
                                         <input
                                           type="checkbox"
                                           checked={!!sub.completed}
                                           onChange={(e) => handleToggleSubTopicComplete(topicRec, sidx, e.target.checked)}
-                                          className={`h-3.5 w-3.5 rounded cursor-pointer shrink-0 ${isOverdue ? 'accent-white border-white/40' : 'accent-red-600 border-slate-300'}`}
+                                          className="h-3.5 w-3.5 rounded text-[#FF8C32] focus:ring-[#FF8C32] border-[#EAE3D5] cursor-pointer shrink-0 accent-[#FF8C32]"
                                           title="Toggle completion"
                                         />
                                       </div>
@@ -2746,17 +2748,17 @@ export default function App() {
                                         className="grow text-left truncate cursor-pointer mr-1 pr-1 flex flex-col justify-start"
                                       >
                                         <div className={`flex items-center gap-1 flex-wrap ${sub.completed ? 'line-through opacity-75' : ''}`}>
-                                          <span className={`mr-0.5 font-mono text-[9px] ${isOverdue ? 'text-red-200' : 'text-slate-400'}`}>{sidx + 1}.</span>
-                                          <span className="truncate">{sub.title}</span>
+                                          <span className="mr-0.5 font-mono text-[9px] opacity-70">{sidx + 1}.</span>
+                                          <span className="truncate font-medium">{sub.title}</span>
                                           {!isOverdue && !sub.completed && sub.confidenceStatus !== 'NONE' && (
                                             <span className={`inline-block h-1.5 w-1.5 rounded-full ml-0.5 ${
-                                              sub.confidenceStatus === 'RED' ? 'bg-rose-500' : sub.confidenceStatus === 'YELLOW' ? 'bg-amber-400' : 'bg-emerald-500'
+                                              sub.confidenceStatus === 'RED' ? 'bg-[#9E2A2B]' : sub.confidenceStatus === 'YELLOW' ? 'bg-[#FF8C32]' : 'bg-emerald-500'
                                             }`} />
                                           )}
                                         </div>
                                         {isOverdue && (
-                                          <span className="text-[9px] font-black uppercase tracking-widest text-amber-200 mt-0.5 animate-pulse">
-                                            Urgent
+                                          <span className={`text-[8px] font-black uppercase tracking-wider mt-0.5 ${isActive ? 'text-amber-200' : 'text-[#9E2A2B]'}`}>
+                                            Urgent Due
                                           </span>
                                         )}
                                       </button>
@@ -2764,10 +2766,10 @@ export default function App() {
                                       {/* Deletion control wrapper */}
                                       <button 
                                         onClick={() => handleDeleteSubTopic(topicRec.id!, sidx, sub.title)}
-                                        className={`p-0.5 rounded shrink-0 ${isActive ? 'text-slate-400 hover:text-red-400' : 'text-slate-300 hover:text-red-650'} transition-all cursor-pointer`}
+                                        className={`p-1 rounded transition-all cursor-pointer ${isActive ? 'text-white/80 hover:text-red-200' : 'text-[#7C7468] hover:text-[#9E2A2B]'}`}
                                         title="Delete sub-topic node"
                                       >
-                                        <Trash2 className="h-3 w-3" />
+                                        <Trash2 className="h-3.5 w-3.5" />
                                       </button>
                                     </div>
                                   );
@@ -2778,14 +2780,14 @@ export default function App() {
                               {syllabusEditorMode && (
                                 <div className="mt-1 space-y-1.5 w-full">
                                   {quickAddingSubTopicTopicId === topicRec.id ? (
-                                    <div className="p-2 bg-amber-50/50 border border-amber-200 rounded-lg flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-                                      <span className="text-[9px] font-mono font-bold text-amber-700 uppercase">New Submodule Title</span>
+                                    <div className="p-3 bg-[#FAF7F2] border border-[#EAE3D5] rounded-xl flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                                      <span className="text-[9px] font-mono font-bold text-[#7C7468] uppercase">New Submodule Title</span>
                                       <input
                                         type="text"
                                         value={quickAddingSubTopicValue}
                                         onChange={(e) => setQuickAddingSubTopicValue(e.target.value)}
                                         placeholder="e.g., Memory Architecture"
-                                        className="text-xs bg-white border border-slate-250 rounded px-2 py-1.5 focus:outline-none focus:border-amber-500 placeholder-slate-400 font-medium text-slate-800"
+                                        className="text-xs bg-white border border-[#EAE3D5] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-[#FF8C32] placeholder-[#7C7468]/50 font-medium text-[#1C1A17]"
                                         onKeyDown={(e) => {
                                           if (e.key === 'Enter') {
                                             e.preventDefault();
@@ -2800,14 +2802,14 @@ export default function App() {
                                         <button
                                           type="button"
                                           onClick={() => setQuickAddingSubTopicTopicId(null)}
-                                          className="px-2 py-1 bg-slate-200 text-slate-600 rounded text-[10px] font-bold cursor-pointer hover:bg-slate-300"
+                                          className="px-3 py-1.5 bg-white border border-[#EAE3D5] text-[#1C1A17] rounded-full text-[10px] font-bold cursor-pointer hover:bg-[#FAF7F2] shadow-xs"
                                         >
                                           Cancel
                                         </button>
                                         <button
                                           type="button"
                                           onClick={() => handleSaveQuickAddSubTopic(topicRec.id!, activeCourse.id, topicRec.subTopics || [])}
-                                          className="px-2 py-1 bg-slate-900 text-amber-400 rounded text-[10px] font-bold cursor-pointer hover:bg-slate-800"
+                                          className="px-3 py-1.5 bg-[#1C1A17] text-white rounded-full text-[10px] font-bold cursor-pointer hover:bg-[#322F2A] shadow-xs"
                                         >
                                           Add Node
                                         </button>
@@ -2817,28 +2819,28 @@ export default function App() {
                                     <button
                                       type="button"
                                       onClick={() => handleQuickAddSubTopic(topicRec.id!, activeCourse.id, topicRec.subTopics || [])}
-                                      className="w-full text-left p-1.5 rounded text-[11px] font-bold text-slate-700 bg-amber-500/10 border border-amber-300/40 hover:bg-amber-500/20 hover:text-amber-950 flex items-center justify-center gap-1 transition-all cursor-pointer mt-1"
+                                      className="w-full text-left p-2 rounded-xl text-[11px] font-bold text-[#FF8C32] bg-[#FFF4E5] border border-[#FFE1B8] hover:bg-[#FFF4E5]/80 flex items-center justify-center gap-1 transition-all cursor-pointer mt-1"
                                     >
-                                      <Plus className="h-3 w-3 text-amber-600 font-extrabold" /> Add Sub-Topic Node
+                                      <Plus className="h-3 w-3 text-[#FF8C32] font-black" /> Add Sub-Topic Node
                                     </button>
                                   )}
                                 </div>
                               )}
 
                               {/* Overarching Topic Flashcards item */}
-                              <div className="h-px bg-slate-100 my-1" />
+                              <div className="h-px bg-[#EAE3D5] my-1" />
                               <button
                                 onClick={() => handleLaunchFlashcards(topicRec.courseId, topicRec.weekNumber, topicRec.topicId)}
-                                className={`w-full text-left p-1.5 rounded flex items-center justify-between text-xs font-semibold ${
+                                className={`w-full text-left p-2.5 rounded-xl flex items-center justify-between text-xs font-bold transition-all border ${
                                   activeFlashcardsTopicId === topicRec.topicId 
-                                    ? 'bg-amber-100 text-amber-950 border border-amber-200' 
-                                    : 'text-amber-800 hover:bg-amber-50'
+                                    ? 'bg-[#FFF4E5] text-[#FF8C32] border-[#FFE1B8] shadow-xs' 
+                                    : 'bg-white hover:bg-[#FAF7F2] text-[#7C7468] border-[#EAE3D5] shadow-xs'
                                 }`}
                               >
                                 <span className="flex items-center gap-1">
                                   <BookMarked className="h-3.5 w-3.5" /> Topic Flashcards
                                 </span>
-                                <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-600 px-1 rounded-sm border border-amber-500/20">
+                                <span className="text-[10px] font-mono font-bold bg-[#FFF4E5] text-[#FF8C32] px-2 py-0.5 rounded-full border border-[#FFE1B8]">
                                   {topicRec.masterFlashcards?.length || 0} cards
                                 </span>
                               </button>
@@ -2856,21 +2858,21 @@ export default function App() {
               {sidebarHidden && (
                 <button 
                   onClick={() => setSidebarHidden(false)}
-                  className="absolute left-6 top-8 z-10 p-2.5 bg-slate-900 border border-slate-800 text-slate-100 hover:bg-slate-800 hover:text-white rounded-xl shadow-lg transition-all cursor-pointer flex items-center gap-2 text-xs"
+                  className="absolute left-6 top-8 z-10 p-3 bg-[#1C1A17] border-2 border-[#1C1A17] text-white hover:bg-[#322F2A] rounded-xl shadow-[2px_2px_0px_0px_#1C1A17] transition-all cursor-pointer flex items-center gap-2 text-xs font-bold"
                 >
-                  <Menu className="h-4 w-4" /> <span>Show Accordion Menu</span>
+                  <Menu className="h-4 w-4 text-[#FF8C32]" /> <span>Show Accordion Menu</span>
                 </button>
               )}
 
               {/* CONTEXT CENTER PANE: RIGHT (Column 8 of 12 if sidebar shown/ 12 of 12 if collapsed) */}
-              <section className={`${sidebarHidden ? 'md:col-span-12' : 'md:col-span-8'} bg-white border border-slate-200 rounded-2xl p-4 md:p-6 flex flex-col gap-4 h-[600px] overflow-y-auto`}>
+              <section className={`${sidebarHidden ? 'md:col-span-12' : 'md:col-span-8'} bg-white border-4 border-[#1C1A17] rounded-3xl p-5 md:p-6 flex flex-col gap-4.5 h-[650px] overflow-y-auto shadow-[4px_4px_0px_0px_#1C1A17]`}>
                 
                 {/* Scenario 1: No subtopic or flashcards are selected */}
                 {!activeSelectionDetails && !activeFlashcardTopicDetails && (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                    <BookOpen className="h-14 w-14 text-slate-300 mb-3" />
-                    <h4 className="font-display font-bold text-slate-800 text-lg">No Module Loaded</h4>
-                    <p className="text-sm text-slate-400 mt-1 max-w-md mx-auto">
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-[#FAF6EE] rounded-2xl border-4 border-[#1C1A17] shadow-[2px_2px_0px_0px_#1C1A17]">
+                    <BookOpen className="h-12 w-12 text-[#FF8C32] mb-3" />
+                    <h4 className="font-pixel text-xs text-[#1C1A17] uppercase tracking-tight">No Module Loaded</h4>
+                    <p className="text-xs text-[#7C7468] font-bold mt-2 max-w-sm mx-auto leading-relaxed">
                       Click any subtopic lecture or the Topic Flashcards deck within the left 13-week syllabus accordion to load resources into this study pane. Or create a custom subtopic node from the options header.
                     </p>
                     <div className="mt-5 flex gap-2">
@@ -2880,7 +2882,7 @@ export default function App() {
                             const sub = activeCourseTopics[0].subTopics[0];
                             handleLaunchSubTopic(activeCourse.id, 1, sub.subTopicId);
                           }}
-                          className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
+                          className="retro-btn-press px-5 py-2 bg-[#FF8C32] text-white border-2 border-[#1C1A17] rounded-xl text-[9px] font-pixel cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                         >
                           Launch Week 1 Core Lecture
                         </button>
@@ -2894,25 +2896,25 @@ export default function App() {
                   <div className="space-y-6">
                     
                     {/* Header breadcrumb & Edit Switcher */}
-                    <div className="flex items-center justify-between border-b border-slate-150 pb-4">
+                    <div className="flex items-center justify-between border-b border-[#EAE3D5] pb-4">
                       <div>
-                        <div className="flex items-center gap-1 text-[10px] font-mono text-slate-400">
+                        <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold text-[#7C7468] uppercase tracking-wider">
                           <span>{activeCourse.code}</span>
                           <span>/</span>
                           <span>Week {activeSelectionDetails.topicRecord.weekNumber}</span>
                           <span>/</span>
-                          <span className="text-slate-500 font-semibold">{activeSelectionDetails.topicRecord.topicTitle}</span>
+                          <span className="text-[#1C1A17] font-black">{activeSelectionDetails.topicRecord.topicTitle}</span>
                         </div>
-                        <h2 className="text-xl font-bold font-display text-slate-900 mt-0.5 tracking-tight">{activeSelectionDetails.subTopic.title}</h2>
+                        <h2 className="text-lg md:text-xl font-bold font-display text-[#1C1A17] mt-1 tracking-tight">{activeSelectionDetails.subTopic.title}</h2>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => setEditMode(!editMode)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer border flex items-center gap-1.5 transition-colors ${
+                          className={`px-4 py-2 rounded-full text-xs font-bold cursor-pointer border flex items-center gap-1.5 transition-colors shadow-xs ${
                             editMode 
-                              ? 'bg-amber-100 text-amber-950 border-amber-250 hover:bg-amber-200' 
-                              : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'
+                              ? 'bg-[#FF8C32] text-white border-[#FF8C32] hover:bg-[#E06E1A]' 
+                              : 'bg-white text-[#1C1A17] hover:bg-[#FAF7F2] border-[#EAE3D5]'
                           }`}
                         >
                           {editMode ? (
@@ -2930,10 +2932,10 @@ export default function App() {
 
                     {/* CONTEXT MODE A: EDITOR MODE */}
                     {editMode ? (
-                      <div className="space-y-5 bg-amber-50/20 p-4 rounded-xl border border-amber-100">
+                      <div className="space-y-5 bg-[#FAF7F2]/50 p-5 rounded-2xl border border-[#EAE3D5] shadow-xs">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-slate-700 block">✏️ Notes Markdown Editor</span>
-                          <span className="text-[10px] font-mono bg-slate-100 px-2 py-0.5 text-slate-400 float-right">Supports H1 (#), H2 (##), bullet lists (-), and inline code (`)</span>
+                          <span className="text-xs font-bold text-[#1C1A17] block">✏️ Notes Markdown Editor</span>
+                          <span className="text-[9px] font-mono font-bold text-[#7C7468]">Ctrl+Enter to save / exit</span>
                         </div>
                         
                         <textarea
@@ -2941,7 +2943,7 @@ export default function App() {
                           defaultValue={activeSelectionDetails.subTopic.notesMarkdown}
                           rows={14}
                           onKeyDown={handleNotesKeyDown}
-                          className="w-full bg-white p-3 font-mono text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500"
+                          className="w-full bg-white p-4 font-mono text-xs border border-[#EAE3D5] rounded-xl focus:outline-none focus:border-[#FF8C32] focus:ring-1 focus:ring-[#FF8C32] text-[#1C1A17]"
                         />
 
                         {/* Obsidian-Style Formatting Glossary */}
@@ -3114,8 +3116,8 @@ export default function App() {
                           </div>
 
                           {/* New Quiz Question Builder Form */}
-                          <div className="bg-slate-55 border border-amber-200/50 rounded-2xl p-4 mt-5 space-y-3 text-xs">
-                            <div className="flex items-center gap-1.5 border-b border-amber-200/40 pb-2">
+                          <div className="bg-slate-50/50 border border-slate-200/60 rounded-2xl p-4 mt-5 space-y-3 text-xs shadow-xs">
+                            <div className="flex items-center gap-1.5 border-b border-slate-200/40 pb-2">
                               <span className="p-1 bg-amber-500/10 text-amber-600 rounded">
                                 <Plus className="h-3.5 w-3.5" />
                               </span>
@@ -3133,6 +3135,26 @@ export default function App() {
                                   onChange={(e) => setNewQuizQuestionPrompt(e.target.value)}
                                   className="w-full bg-white px-3 py-2 border border-slate-250 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
                                 />
+                              </div>
+
+                              <div className="flex items-center gap-2.5 bg-amber-50/40 border border-amber-100 p-2 rounded-xl">
+                                <label className="text-[10px] text-amber-800 font-bold block">How many options do you want? (2-5):</label>
+                                <select
+                                  value={newQuizOptionCount}
+                                  onChange={(e) => {
+                                    const count = parseInt(e.target.value);
+                                    setNewQuizOptionCount(count);
+                                    if (newQuizCorrectIndex >= count) {
+                                      setNewQuizCorrectIndex(count - 1);
+                                    }
+                                  }}
+                                  className="bg-white px-2.5 py-1 border border-amber-200 rounded text-xs font-bold text-slate-800 cursor-pointer focus:outline-none focus:border-amber-500 shadow-xs"
+                                >
+                                  <option value={2}>2 Options (A-B)</option>
+                                  <option value={3}>3 Options (A-C)</option>
+                                  <option value={4}>4 Options (A-D)</option>
+                                  <option value={5}>5 Options (A-E)</option>
+                                </select>
                               </div>
 
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3160,47 +3182,68 @@ export default function App() {
                                   />
                                 </div>
 
-                                <div className="space-y-1">
-                                  <label className="text-[10px] text-slate-500 font-semibold block">Option C (Optional)</label>
-                                  <input 
-                                    type="text"
-                                    placeholder="e.g. Theta(1)"
-                                    value={newQuizOption3}
-                                    onChange={(e) => setNewQuizOption3(e.target.value)}
-                                    className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
-                                  />
-                                </div>
+                                {newQuizOptionCount >= 3 && (
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 font-semibold block">Option C (Required)</label>
+                                    <input 
+                                      type="text"
+                                      required
+                                      placeholder="e.g. Theta(1)"
+                                      value={newQuizOption3}
+                                      onChange={(e) => setNewQuizOption3(e.target.value)}
+                                      className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
+                                    />
+                                  </div>
+                                )}
 
-                                <div className="space-y-1">
-                                  <label className="text-[10px] text-slate-500 font-semibold block">Option D (Optional)</label>
-                                  <input 
-                                    type="text"
-                                    placeholder="e.g. None of the above"
-                                    value={newQuizOption4}
-                                    onChange={(e) => setNewQuizOption4(e.target.value)}
-                                    className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
-                                  />
-                                </div>
+                                {newQuizOptionCount >= 4 && (
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 font-semibold block">Option D (Required)</label>
+                                    <input 
+                                      type="text"
+                                      required
+                                      placeholder="e.g. None of the above"
+                                      value={newQuizOption4}
+                                      onChange={(e) => setNewQuizOption4(e.target.value)}
+                                      className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
+                                    />
+                                  </div>
+                                )}
+
+                                {newQuizOptionCount >= 5 && (
+                                  <div className="space-y-1 col-span-1 sm:col-span-2">
+                                    <label className="text-[10px] text-slate-500 font-semibold block">Option E (Required)</label>
+                                    <input 
+                                      type="text"
+                                      required
+                                      placeholder="e.g. All of the above"
+                                      value={newQuizOption5}
+                                      onChange={(e) => setNewQuizOption5(e.target.value)}
+                                      className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
+                                    />
+                                  </div>
+                                )}
                               </div>
 
                               <div className="flex items-center justify-between gap-3 pt-2">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] text-slate-500 font-bold">Mark Select Correct Option:</span>
+                                  <span className="text-[10px] text-slate-500 font-semibold">Mark Correct Option:</span>
                                   <select 
                                     value={newQuizCorrectIndex}
                                     onChange={(e) => setNewQuizCorrectIndex(parseInt(e.target.value))}
-                                    className="bg-white px-2.5 py-1.5 border border-slate-250 rounded-lg font-semibold text-xs text-slate-800 cursor-pointer focus:outline-none"
+                                    className="bg-white px-2.5 py-1.5 border border-slate-250 rounded-lg font-semibold text-xs text-slate-800 cursor-pointer focus:outline-none focus:border-amber-500"
                                   >
                                     <option value={0}>Option A</option>
                                     <option value={1}>Option B</option>
-                                    {newQuizOption3.trim() && <option value={2}>Option C</option>}
-                                    {newQuizOption4.trim() && <option value={3}>Option D</option>}
+                                    {newQuizOptionCount >= 3 && <option value={2}>Option C</option>}
+                                    {newQuizOptionCount >= 4 && <option value={3}>Option D</option>}
+                                    {newQuizOptionCount >= 5 && <option value={4}>Option E</option>}
                                   </select>
                                 </div>
 
                                 <button 
                                   type="submit"
-                                  className="px-4 py-2 bg-slate-900 text-amber-400 hover:bg-amber-500 hover:text-slate-950 font-black rounded-xl transition-all cursor-pointer shadow-sm"
+                                  className="retro-btn-press px-4 py-2 bg-[#FF8C32] hover:bg-[#E06E1A] text-white font-bold rounded-xl transition-all cursor-pointer shadow-xs"
                                 >
                                   Save Question Entry
                                 </button>
@@ -3217,15 +3260,15 @@ export default function App() {
                       <div className="space-y-6">
 
                         {/* Interactive Pill Tabs to split Notes & Quiz */}
-                        <div className="flex items-center justify-start border-b border-slate-150 pb-3 mb-2">
-                          <div className="bg-slate-100/90 p-1.5 rounded-2xl flex items-center gap-1 border border-slate-200/50">
+                        <div className="flex items-center justify-start border-b border-[#EAE3D5] pb-3 mb-2">
+                          <div className="bg-[#FAF7F2] p-1.5 rounded-full flex items-center gap-1 border border-[#EAE3D5] shadow-xs">
                             <button
                               type="button"
                               onClick={() => setActiveViewTab('notes')}
-                              className={`px-4.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight transition-all duration-150 flex items-center gap-2 cursor-pointer ${
+                              className={`px-4.5 py-1.5 rounded-full text-xs font-bold tracking-tight transition-all duration-150 flex items-center gap-2 cursor-pointer ${
                                 activeViewTab === 'notes'
-                                  ? 'bg-white text-slate-900 shadow-sm font-bold border border-slate-200/50'
-                                  : 'text-slate-500 hover:text-slate-800 bg-transparent'
+                                  ? 'bg-white text-[#1C1A17] shadow-xs font-bold border border-[#EAE3D5]'
+                                  : 'text-[#7C7468] hover:text-[#1C1A17] bg-transparent'
                               }`}
                             >
                               <span className="text-sm">📖</span> Notes
@@ -3233,13 +3276,13 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => setActiveViewTab('quiz')}
-                              className={`px-4.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight transition-all duration-150 flex items-center gap-2 cursor-pointer ${
+                              className={`px-4.5 py-1.5 rounded-full text-xs font-bold tracking-tight transition-all duration-150 flex items-center gap-2 cursor-pointer ${
                                 activeViewTab === 'quiz'
-                                  ? 'bg-white text-slate-900 shadow-sm font-bold border border-slate-200/50'
-                                  : 'text-slate-500 hover:text-slate-800 bg-transparent'
+                                  ? 'bg-white text-[#1C1A17] shadow-xs font-bold border border-[#EAE3D5]'
+                                  : 'text-[#7C7468] hover:text-[#1C1A17] bg-transparent'
                               }`}
                             >
-                              <span className="text-sm text-rose-500 font-bold">❓</span> Quiz ({activeSelectionDetails.subTopic.quiz?.length || 0})
+                              <span className="text-sm">❓</span> Quiz ({activeSelectionDetails.subTopic.quiz?.length || 0})
                             </button>
                             <button
                               type="button"
@@ -3248,42 +3291,42 @@ export default function App() {
                                 setSubFCIndex(0);
                                 setSubIsFlipped(false);
                               }}
-                              className={`px-4.5 py-1.5 rounded-xl text-xs font-semibold tracking-tight transition-all duration-150 flex items-center gap-2 cursor-pointer ${
+                              className={`px-4.5 py-1.5 rounded-full text-xs font-bold tracking-tight transition-all duration-150 flex items-center gap-2 cursor-pointer ${
                                 activeViewTab === 'flashcards'
-                                  ? 'bg-white text-slate-900 shadow-sm font-bold border border-slate-200/50'
-                                  : 'text-slate-500 hover:text-slate-800 bg-transparent'
+                                  ? 'bg-white text-[#1C1A17] shadow-xs font-bold border border-[#EAE3D5]'
+                                  : 'text-[#7C7468] hover:text-[#1C1A17] bg-transparent'
                               }`}
                             >
-                              <span className="text-sm text-indigo-500 font-bold">⚡</span> Flashcards ({activeSelectionDetails.subTopic.flashcards?.length || 0})
+                              <span className="text-sm">⚡</span> Flashcards ({activeSelectionDetails.subTopic.flashcards?.length || 0})
                             </button>
                           </div>
                         </div>
 
                         {activeViewTab === 'notes' ? (
                           /* A. Core Markdown Study Notes View */
-                          <article className="prose max-w-none prose-slate bg-indigo-50/10 border border-slate-100 p-5 rounded-2xl shadow-sm">
+                          <article className="prose max-w-none prose-slate bg-[#FAF6EE] border-4 border-[#1C1A17] p-6 rounded-3xl shadow-[4px_4px_0px_0px_#1C1A17] text-xs text-[#1C1A17]">
                             <MarkdownView content={activeSelectionDetails.subTopic.notesMarkdown} />
                           </article>
                         ) : activeViewTab === 'quiz' ? (
                           /* B. Mastery Quiz Block */
-                          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 md:p-6 space-y-5">
+                          <div className="bg-white border-4 border-[#1C1A17] rounded-3xl p-5 md:p-6 space-y-5 shadow-[4px_4px_0px_0px_#1C1A17]">
                             
-                            <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200/60 pb-3 mb-1">
+                            <div className="flex items-center justify-between flex-wrap gap-2 border-b-2 border-[#1C1A17] pb-3 mb-1">
                               <div className="flex items-center gap-2">
-                                <Award className="h-5 w-5 text-amber-500" />
-                                <h3 className="font-display font-medium text-slate-900 text-sm md:text-base">Module Mastery Check-Quiz</h3>
+                                <Award className="h-5 w-5 text-[#FF8C32]" />
+                                <h3 className="font-pixel text-[10px] text-[#1C1A17] uppercase tracking-tight">Module Mastery Check-Quiz</h3>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-mono bg-slate-200 text-slate-650 px-2.5 py-1 rounded-full font-bold">
+                                <span className="text-[8px] font-pixel bg-[#FAF6EE] text-[#1C1A17] border-2 border-[#1C1A17] px-2.5 py-1 rounded shadow-[1px_1px_0px_0px_#1C1A17]">
                                   PASS GOAL: 80% SCORE REQUIRED
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => setShowViewModeQuizBuilder(!showViewModeQuizBuilder)}
-                                  className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer border flex items-center gap-1 transition-all ${
+                                  className={`retro-btn-press px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer border-2 border-[#1C1A17] flex items-center gap-1 transition-all shadow-[2px_2px_0px_0px_#1C1A17] ${
                                     showViewModeQuizBuilder
-                                      ? 'bg-amber-500 text-slate-950 border-amber-500 font-bold'
-                                      : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 shadow-xs'
+                                      ? 'bg-[#FF8C32] text-white'
+                                      : 'bg-white text-[#1C1A17] hover:bg-[#FAF7F2]'
                                   }`}
                                 >
                                   <Plus className="h-3 w-3" /> Add Question
@@ -3302,7 +3345,7 @@ export default function App() {
                                     <span className="font-bold text-slate-800">Add Custom Quiz Questions</span>
                                   </div>
 
-                                  {/* Select Toggles */}
+                                                                  {/* Select Toggles */}
                                   <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
                                     <button
                                       type="button"
@@ -3339,8 +3382,28 @@ export default function App() {
                                         placeholder="e.g. What is the fundamental asymptotic limit of case 1 in Master Theorem?"
                                         value={newQuizQuestionPrompt}
                                         onChange={(e) => setNewQuizQuestionPrompt(e.target.value)}
-                                        className="w-full bg-slate-55 px-3 py-2 border border-slate-250 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800 focus:bg-white"
+                                        className="w-full bg-white px-3 py-2 border border-slate-250 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
                                       />
+                                    </div>
+
+                                    <div className="flex items-center gap-2.5 bg-amber-50/40 border border-amber-100 p-2 rounded-xl">
+                                      <label className="text-[10px] text-amber-800 font-bold block">How many options do you want? (2-5):</label>
+                                      <select
+                                        value={newQuizOptionCount}
+                                        onChange={(e) => {
+                                          const count = parseInt(e.target.value);
+                                          setNewQuizOptionCount(count);
+                                          if (newQuizCorrectIndex >= count) {
+                                            setNewQuizCorrectIndex(count - 1);
+                                          }
+                                        }}
+                                        className="bg-white px-2.5 py-1 border border-amber-200 rounded text-xs font-bold text-slate-800 cursor-pointer focus:outline-none focus:border-amber-500 shadow-xs"
+                                      >
+                                        <option value={2}>2 Options (A-B)</option>
+                                        <option value={3}>3 Options (A-C)</option>
+                                        <option value={4}>4 Options (A-D)</option>
+                                        <option value={5}>5 Options (A-E)</option>
+                                      </select>
                                     </div>
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3352,7 +3415,7 @@ export default function App() {
                                           placeholder="e.g. Theta(n^(log_b a))"
                                           value={newQuizOption1}
                                           onChange={(e) => setNewQuizOption1(e.target.value)}
-                                          className="w-full bg-slate-55 px-3 py-1.5 border border-slate-205 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800 focus:bg-white"
+                                          className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
                                         />
                                       </div>
 
@@ -3364,51 +3427,72 @@ export default function App() {
                                           placeholder="e.g. Theta(n log n)"
                                           value={newQuizOption2}
                                           onChange={(e) => setNewQuizOption2(e.target.value)}
-                                          className="w-full bg-slate-55 px-3 py-1.5 border border-slate-205 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800 focus:bg-white"
+                                          className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
                                         />
                                       </div>
 
-                                      <div className="space-y-1">
-                                        <label className="text-[10px] text-slate-500 font-semibold block">Option C (Optional)</label>
-                                        <input 
-                                          type="text"
-                                          placeholder="e.g. Theta(1)"
-                                          value={newQuizOption3}
-                                          onChange={(e) => setNewQuizOption3(e.target.value)}
-                                          className="w-full bg-slate-55 px-3 py-1.5 border border-slate-205 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800 focus:bg-white"
-                                        />
-                                      </div>
+                                      {newQuizOptionCount >= 3 && (
+                                        <div className="space-y-1">
+                                          <label className="text-[10px] text-slate-500 font-semibold block">Option C (Required)</label>
+                                          <input 
+                                            type="text"
+                                            required
+                                            placeholder="e.g. Theta(1)"
+                                            value={newQuizOption3}
+                                            onChange={(e) => setNewQuizOption3(e.target.value)}
+                                            className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
+                                          />
+                                        </div>
+                                      )}
 
-                                      <div className="space-y-1">
-                                        <label className="text-[10px] text-slate-500 font-semibold block">Option D (Optional)</label>
-                                        <input 
-                                          type="text"
-                                          placeholder="e.g. None of the above"
-                                          value={newQuizOption4}
-                                          onChange={(e) => setNewQuizOption4(e.target.value)}
-                                          className="w-full bg-slate-55 px-3 py-1.5 border border-slate-205 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800 focus:bg-white"
-                                        />
-                                      </div>
+                                      {newQuizOptionCount >= 4 && (
+                                        <div className="space-y-1">
+                                          <label className="text-[10px] text-slate-500 font-semibold block">Option D (Required)</label>
+                                          <input 
+                                            type="text"
+                                            required
+                                            placeholder="e.g. None of the above"
+                                            value={newQuizOption4}
+                                            onChange={(e) => setNewQuizOption4(e.target.value)}
+                                            className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
+                                          />
+                                        </div>
+                                      )}
+
+                                      {newQuizOptionCount >= 5 && (
+                                        <div className="space-y-1 col-span-1 sm:col-span-2">
+                                          <label className="text-[10px] text-slate-500 font-semibold block">Option E (Required)</label>
+                                          <input 
+                                            type="text"
+                                            required
+                                            placeholder="e.g. All of the above"
+                                            value={newQuizOption5}
+                                            onChange={(e) => setNewQuizOption5(e.target.value)}
+                                            className="w-full bg-white px-3 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 text-slate-800"
+                                          />
+                                        </div>
+                                      )}
                                     </div>
 
                                     <div className="flex items-center justify-between gap-3 pt-2">
                                       <div className="flex items-center gap-1.5">
-                                        <span className="text-[10px] text-slate-500 font-bold">Mark Correct Answer:</span>
+                                        <span className="text-[10px] text-slate-500 font-semibold">Mark Correct Option:</span>
                                         <select 
                                           value={newQuizCorrectIndex}
                                           onChange={(e) => setNewQuizCorrectIndex(parseInt(e.target.value))}
-                                          className="bg-slate-55 px-2.5 py-1.5 border border-slate-200 rounded-lg font-semibold text-xs text-slate-800 cursor-pointer focus:outline-none"
+                                          className="bg-white px-2.5 py-1.5 border border-slate-250 rounded-lg font-semibold text-xs text-slate-800 cursor-pointer focus:outline-none focus:border-amber-500"
                                         >
                                           <option value={0}>Option A</option>
                                           <option value={1}>Option B</option>
-                                          {newQuizOption3.trim() && <option value={2}>Option C</option>}
-                                          {newQuizOption4.trim() && <option value={3}>Option D</option>}
+                                          {newQuizOptionCount >= 3 && <option value={2}>Option C</option>}
+                                          {newQuizOptionCount >= 4 && <option value={3}>Option D</option>}
+                                          {newQuizOptionCount >= 5 && <option value={4}>Option E</option>}
                                         </select>
                                       </div>
 
                                       <button 
                                         type="submit"
-                                        className="px-4 py-2 bg-slate-900 text-amber-400 hover:bg-amber-500 hover:text-slate-950 font-black rounded-xl transition-all cursor-pointer shadow-sm"
+                                        className="retro-btn-press px-4 py-2 bg-[#FF8C32] hover:bg-[#E06E1A] text-white font-bold rounded-xl transition-all cursor-pointer shadow-xs"
                                       >
                                         Save Question Entry
                                       </button>

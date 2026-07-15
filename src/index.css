@@ -1,29 +1,138 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-display: "Space Grotesk", sans-serif;
+  --font-retro: "Inter", sans-serif;
+  --font-pixel: "Space Grotesk", sans-serif;
 }
 
 /* Custom scrollbar and card shadows */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #FAF8F5;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
-  border-radius: 3px;
+  background: #EBE6DD;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.5);
+  background: #D8D2C4;
+}
+
+/* Custom serif font class */
+.font-serif-display {
+  font-family: "Lora", Georgia, serif;
+}
+
+/* Reverting pixel/retro classes to clean minimalist styles */
+.retro-border {
+  border: 1px solid #EBE6DD;
+}
+
+.retro-shadow {
+  box-shadow: 0 4px 18px rgba(115, 102, 85, 0.05);
+}
+
+.retro-shadow-sm {
+  box-shadow: 0 2px 8px rgba(115, 102, 85, 0.03);
+}
+
+.retro-shadow-lg {
+  box-shadow: 0 10px 30px rgba(115, 102, 85, 0.07);
+}
+
+/* Elegant sleek button hover/active transitions */
+.retro-btn-press {
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 0.75rem !important; /* rounded-xl */
+}
+.retro-btn-press:hover {
+  transform: translateY(-1px);
+}
+.retro-btn-press:active {
+  transform: translateY(1px);
+}
+
+/* Target all retro borders specifically, overriding their border width and color */
+[class*="border-[#1C1A17]"], [class*="border-2"], [class*="border-4"] {
+  border-width: 1px !important;
+  border-color: #E2DDD5 !important;
+}
+
+/* Let's make sure specific colors like red/yellow borders are preserved if they are status colors */
+[class*="border-red-500"], [class*="border-[#9E2A2B]"] {
+  border-color: #FCA5A5 !important; /* Soft light red border */
+}
+[class*="border-emerald-500"] {
+  border-color: #A7F3D0 !important; /* Soft light green border */
+}
+
+/* Target all retro shadows specifically, overriding them to very soft modern elegant shadows */
+[class*="shadow-["],
+[class*="shadow-[2px_2px_0px_0px_#1C1A17]"],
+[class*="shadow-[3px_3px_0px_0px_#1C1A17]"],
+[class*="shadow-[4px_4px_0px_0px_#1C1A17]"],
+[class*="shadow-[6px_6px_0px_0px_#1C1A17]"] {
+  box-shadow: 0 4px 16px rgba(115, 102, 85, 0.06), 0 1px 4px rgba(115, 102, 85, 0.04) !important;
+}
+
+/* Change main background and colors */
+body, .min-h-screen {
+  background-color: #FAF8F5 !important;
+}
+
+/* Change the accent button colors to deep olive/moss green to perfectly match the target image! */
+[class*="bg-[#FF8C32]"], .bg-\[\#FF8C32\], button[class*="bg-[#FF8C32]"] {
+  background-color: #4C5E24 !important; /* Solid Moss Green from target screenshot! */
+  color: #FFFFFF !important;
+  border-color: transparent !important;
+}
+[class*="bg-[#FF8C32]"]:hover, .bg-\[\#FF8C32\]:hover {
+  background-color: #3E4D1D !important;
+}
+
+/* Style selected/checked tabs to use olive green instead of retro orange! */
+input[type="checkbox"]:checked {
+  color: #4C5E24 !important;
+  accent-color: #4C5E24 !important;
+}
+
+/* Customize buttons to have smooth transitions and a lovely soft hover lift */
+.retro-btn-press {
+  transform: none !important;
+  box-shadow: 0 2px 8px rgba(115, 102, 85, 0.04) !important;
+}
+.retro-btn-press:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(115, 102, 85, 0.08) !important;
+}
+.retro-btn-press:active {
+  transform: translateY(1px) !important;
+}
+
+/* Let's style the custom buttons that had text color #FF8C32 */
+.text-\[\#FF8C32\] {
+  color: #4C5E24 !important;
+}
+
+/* Style headers and display items with beautiful serif typography like "Did you read today?" */
+h1, h2, h3, .serif-title {
+  font-family: "Lora", Georgia, serif !important;
+}
+
+/* Keep JetBrains Mono for status counters but with soft elegant backgrounds */
+.font-pixel {
+  font-family: "Space Grotesk", sans-serif !important;
+  letter-spacing: -0.025em;
 }
 
 @keyframes pulse-ring {
