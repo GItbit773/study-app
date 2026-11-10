@@ -3,8 +3,31 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase } from './db';
 import { Course, TopicRecord, Deadline, SubTopic, Flashcard, UrgentReview, QuizQuestion } from './types';
 import { MarkdownView } from './components/MarkdownView';
-import { TermCalendar } from './components/TermCalendar';
 import { ModernLogo } from './components/ModernLogo';
+import { ReviewSession } from './components/ReviewSession';
+import { PlannerCalendar, tagStyle } from './components/PlannerCalendar';
+import { Sq3rGuide } from './components/Sq3rGuide';
+import { CornellNotes, type NoteFields } from './components/CornellNotes';
+import {
+  addDays,
+  applySubTopicLevel,
+  courseProgress,
+  daysBetween,
+  dueTopics,
+  eventsOn,
+  findTopic,
+  formatTime,
+  isoToLocalDay,
+  isPriorityTag,
+  LEVEL_LABEL,
+  parseLocalDate,
+  rotationTopics,
+  topicProgress,
+  topicReviewCards,
+  type Level,
+  type TopicRef,
+} from './srs';
+import type { CalendarEvent, Sq3rProgress } from './types';
 import { 
   BookOpen, 
   Clock, 
@@ -259,8 +282,26 @@ export default function App() {
   const deadlines = useLiveQuery(() => db.deadlines.toArray());
   const settings = useLiveQuery(() => db.settings.toArray());
   const urgentReviews = useLiveQuery(() => db.urgentReviews.toArray());
+  const calendarEvents = useLiveQuery(() => db.events.toArray()) || [];
 
   const [dbSeeded, setDbSeeded] = useState(false);
+
+  // Today's date always follows the device clock (rolls over at midnight / when the app regains focus)
+  const [todayStr, setTodayStr] = useState(getLocalTodayDateString());
+  useEffect(() => {
+    const refresh = () => setTodayStr(prev => {
+      const now = getLocalTodayDateString();
+      return now === prev ? prev : now;
+    });
+    const timer = window.setInterval(refresh, 60_000);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
 
   // View state managers
   const [currentView, setCurrentView] = useState<'dashboard' | 'course'>('dashboard');
@@ -316,7 +357,6 @@ export default function App() {
   const [newUrgentCourseId, setNewUrgentCourseId] = useState<string>('FIN302');
 
   // Custom simulation and calibration state
-  const [simDate, setSimDate] = useState(getLocalTodayDateString()); // default system simulated date
   const [customStart, setCustomStart] = useState('2026-06-08'); 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [customUserName, setCustomUserName] = useState('Alex Developer');
@@ -339,7 +379,14 @@ export default function App() {
   const [newQuizOptionCount, setNewQuizOptionCount] = useState<number>(4);
   const [newQuizCorrectIndex, setNewQuizCorrectIndex] = useState<number>(0);
   const [showViewModeQuizBuilder, setShowViewModeQuizBuilder] = useState<boolean>(false);
-  const [activeViewTab, setActiveViewTab] = useState<'notes' | 'quiz' | 'flashcards'>('notes');
+  const [activeViewTab, setActiveViewTab] = useState<'guide' | 'notes' | 'quiz' | 'flashcards'>('guide');
+  // Opening a topic: new topics start on the SQ3R guide, concluded ones on their notes
+  useEffect(() => {
+    if (!activeSubTopicId || !topics) return;
+    const sub = findTopic(topics, activeSubTopicId)?.sub;
+    setActiveViewTab(sub && sub.confidenceStatus !== 'NONE' ? 'notes' : 'guide');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSubTopicId]);
 
   // Bulk input and subject editing states
   const [syllabusEditorMode, setSyllabusEditorMode] = useState<boolean>(false);
@@ -359,6 +406,10 @@ export default function App() {
   const [quickAddingSubTopicTopicId, setQuickAddingSubTopicTopicId] = useState<number | null>(null);
   const [quickAddingSubTopicValue, setQuickAddingSubTopicValue] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // Active review session queue (null = no session open)
+  const [sessionQueue, setSessionQueue] = useState<TopicRef[] | null>(null);
+  // Ask the calendar to open its editor with a prefilled entry
+  const [calendarOpenRequest, setCalendarOpenRequest] = useState<{ draft: Partial<CalendarEvent>; nonce: number } | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -648,12 +699,13 @@ export default function App() {
   };
 
   const handleClearAllData = async () => {
-    if (window.confirm("Are you absolutely sure you want to delete all courses, custom notes, checklists, deadlines, and flashcards? This will reset your database to a completely empty slate so you can enter your own information from scratch.")) {
+    if (window.confirm("Are you absolutely sure you want to delete all courses, notes, deadlines, calendar entries and flashcards? This will reset your database to a completely empty slate so you can enter your own information from scratch.")) {
       try {
         await db.courses.clear();
         await db.topics.clear();
         await db.deadlines.clear();
         await db.urgentReviews.clear();
+        await db.events.clear();
         
         setSelectedCourseId("");
         setActiveSubTopicId(null);
@@ -661,7 +713,7 @@ export default function App() {
         
         setCurrentView('dashboard');
         setShowSettingsModal(false);
-        alert("All placeholder data successfully erased! You are starting with a completely blank slate. Click 'Editor Mode' in 'My Course Grid' to add your custom courses & syllabus!");
+        alert("All placeholder data successfully erased! You are starting with a completely blank slate. Use '+ Add course' to add your courses.");
       } catch (err) {
         console.error("Purge failed:", err);
         alert("Database reset failed. Please reload the tab and try again.");
@@ -679,6 +731,7 @@ export default function App() {
         topics: await db.topics.toArray(),
         deadlines: await db.deadlines.toArray(),
         urgentReviews: await db.urgentReviews.toArray(),
+        events: await db.events.toArray(),
         settings: await db.settings.toArray()
       };
 
@@ -720,12 +773,13 @@ export default function App() {
         return;
       }
 
-      await db.transaction('rw', [db.courses, db.topics, db.deadlines, db.urgentReviews, db.settings], async () => {
+      await db.transaction('rw', [db.courses, db.topics, db.deadlines, db.urgentReviews, db.events, db.settings], async () => {
         // Clear all
         await db.courses.clear();
         await db.topics.clear();
         await db.deadlines.clear();
         await db.urgentReviews.clear();
+        await db.events.clear();
         await db.settings.clear();
 
         // Add imported items safely if they exist in the backup
@@ -740,6 +794,9 @@ export default function App() {
         }
         if (Array.isArray(importObject.urgentReviews)) {
           await db.urgentReviews.bulkAdd(importObject.urgentReviews);
+        }
+        if (Array.isArray(importObject.events)) {
+          await db.events.bulkAdd(importObject.events);
         }
         if (Array.isArray(importObject.settings)) {
           await db.settings.bulkAdd(importObject.settings);
@@ -788,7 +845,7 @@ export default function App() {
 
   // Active user name and date values
   const semesterStartDateString = customStart || '2026-06-08';
-  const simulatedTodayString = simDate || '2026-06-16';
+  const simulatedTodayString = todayStr; // always the real local date
 
   // Semester week calculation
   const getSemesterWeek = (startDateStr: string, simulatedDateStr: string): number => {
@@ -927,28 +984,91 @@ export default function App() {
     setNewDeadlineTitle('');
   };
 
-  // Spaced repetition scheduler algorithms
-  // Red = 2 days, Yellow = 5 days, Green = 14 days
-  const handleSetConfidence = async (tRecord: TopicRecord, subIdx: number, level: 'RED' | 'YELLOW' | 'GREEN' | 'NONE') => {
-    const updatedSubtopics = [...tRecord.subTopics];
-    const sub = updatedSubtopics[subIdx];
-    
-    sub.confidenceStatus = level;
-    let daysToAdd = 0;
-    if (level === 'RED') daysToAdd = 2;
-    else if (level === 'YELLOW') daysToAdd = 5;
-    else if (level === 'GREEN') daysToAdd = 14;
+  // Updates one subtopic from a fresh DB read, so concurrent edits (notes autosave, ratings) don't overwrite each other
+  const updateSubTopic = async (subTopicId: string, fn: (sub: SubTopic) => SubTopic) => {
+    const all = await db.topics.toArray();
+    const record = all.find(t => t.subTopics?.some(s => s.subTopicId === subTopicId));
+    if (!record) return null;
+    let updatedSub: SubTopic | null = null;
+    const subTopics = record.subTopics.map(s => {
+      if (s.subTopicId !== subTopicId) return s;
+      updatedSub = fn(s);
+      return updatedSub;
+    });
+    await db.topics.update(record.id!, { subTopics });
+    return updatedSub as SubTopic | null;
+  };
 
-    if (daysToAdd > 0) {
-      const reviewDate = new Date(simulatedTodayString);
-      reviewDate.setDate(reviewDate.getDate() + daysToAdd);
-      sub.nextReviewDate = reviewDate.toISOString();
-    } else {
-      sub.nextReviewDate = null;
+  // Rating a topic (Hard = Red, Medium = Yellow, Easy = Green) concludes it and puts it in the review rotation.
+  // First rating keeps the familiar 2 / 5 / 14 days; later ratings grow the gap (see src/srs.ts).
+  const rateTopic = async (subTopicId: string, level: Level, quiet = false) => {
+    const updated = await updateSubTopic(subTopicId, s => applySubTopicLevel(s, level, simulatedTodayString));
+    if (updated?.review && !quiet) {
+      const due = parseLocalDate(updated.review.due).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+      showToast(`Rated ${LEVEL_LABEL[level]}. Next review ${due}.`);
     }
+  };
 
-    await db.topics.update(tRecord.id!, { subTopics: updatedSubtopics });
-    alert(`Confidence set to ${level}! Scheduled next review in ${daysToAdd} days.`);
+  const handleSetConfidence = async (tRecord: TopicRecord, subIdx: number, level: 'RED' | 'YELLOW' | 'GREEN' | 'NONE') => {
+    const sub = tRecord.subTopics[subIdx];
+    if (!sub) return;
+    if (level === 'NONE') {
+      await updateSubTopic(sub.subTopicId, s => ({ ...s, confidenceStatus: 'NONE', nextReviewDate: null, review: undefined, reviewBefore: undefined }));
+      return;
+    }
+    await rateTopic(sub.subTopicId, level);
+  };
+
+  const handleSaveSq3r = (subTopicId: string, sq3r: Sq3rProgress) => {
+    updateSubTopic(subTopicId, s => ({ ...s, sq3r }));
+  };
+
+  const handleSaveNoteFields = (subTopicId: string, fields: NoteFields) => {
+    updateSubTopic(subTopicId, s => ({ ...s, ...fields }));
+  };
+
+  // ---- Today: review rotation + calendar entries tagged Study / Priority ----
+  const dueTopicRefs = dueTopics(topics || [], simulatedTodayString);
+  const todayEvents = eventsOn(calendarEvents, simulatedTodayString);
+  const todayPriorityEvents = todayEvents.filter(ev => isPriorityTag(ev.tag));
+  const todayScheduleEvents = todayEvents.filter(ev => !isPriorityTag(ev.tag));
+
+  const handleStartSession = (refs: TopicRef[]) => {
+    if (refs.length === 0) {
+      showToast('Nothing to review right now.');
+      return;
+    }
+    setSessionQueue(refs);
+  };
+
+  const handleRateTopicFromSession = async (ref: TopicRef, level: Level) => {
+    await rateTopic(ref.sub.subTopicId, level, true);
+  };
+
+  const handleToggleEventDone = async (ev: CalendarEvent, day: string, done: boolean) => {
+    const dates = new Set(ev.doneDates || []);
+    if (done) dates.add(day); else dates.delete(day);
+    await db.events.update(ev.id!, { doneDates: [...dates] });
+  };
+
+  const handleSaveEvent = async (ev: CalendarEvent) => {
+    if (ev.id != null) await db.events.put(ev);
+    else await db.events.add(ev);
+  };
+
+  const handleDeleteEvent = async (id: number) => {
+    await db.events.delete(id);
+  };
+
+  const termEndDate = addDays(semesterStartDateString, 13 * 7 - 1);
+
+  const handlePlanStudy = (subTopicId?: string, courseId?: string) => {
+    setCurrentView('dashboard');
+    setCalendarOpenRequest({
+      draft: { tag: 'study', date: simulatedTodayString, subTopicId, courseId, start: '18:00', end: '19:00' },
+      nonce: Date.now(),
+    });
+    window.setTimeout(() => document.getElementById('calendar')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   };
 
   const handleToggleSubTopicComplete = async (tRecord: TopicRecord, subIdx: number, isComplete: boolean) => {
@@ -956,14 +1076,11 @@ export default function App() {
     const sub = updatedSubtopics[subIdx];
     sub.completed = isComplete;
     await db.topics.update(tRecord.id!, { subTopics: updatedSubtopics });
-    showToast(isComplete ? `Sub-topic task "${sub.title}" marked as complete!` : `Sub-topic task "${sub.title}" returned to focus.`);
+    showToast(isComplete ? `"${sub.title}" is done and out of your review rotation.` : `"${sub.title}" is back in your review rotation.`);
   };
 
   // Pull queue items
   const spacedRepetitionQueue = (() => {
-    const nowLimit = new Date(simulatedTodayString);
-    nowLimit.setHours(23, 59, 59, 999);
-
     const queue: {
       dbId: number;
       courseCode: string;
@@ -982,9 +1099,10 @@ export default function App() {
 
       record.subTopics?.forEach((sub, idx) => {
         if (sub.nextReviewDate && sub.confidenceStatus !== 'NONE' && !sub.completed) {
-          const revDate = new Date(sub.nextReviewDate);
-          const status = revDate <= nowLimit ? 'DUE' : 'UPCOMING';
-          const overdueDays = Math.ceil((nowLimit.getTime() - revDate.getTime()) / (1000 * 60 * 60 * 24));
+          // Compare calendar days (local time) so "in N days" matches the due date shown
+          const dueDay = isoToLocalDay(sub.nextReviewDate);
+          const status = dueDay <= simulatedTodayString ? 'DUE' : 'UPCOMING';
+          const overdueDays = daysBetween(dueDay, simulatedTodayString);
 
           queue.push({
             dbId: record.id!,
@@ -1044,7 +1162,7 @@ export default function App() {
 
     const newCourseObj: Course = {
       id: cleanId,
-      code: customCourseCode.trim() || cleanId,
+      code: customCourseId.trim().toUpperCase().replace(/\s+/g, ' '),
       name: customCourseName.trim() || "New Customized Course",
       color: customCourseColor || "amber"
     };
@@ -1054,7 +1172,7 @@ export default function App() {
 
     // 2. Automatically generate 13 empty weeks
     for (let w = 1; w <= 13; w++) {
-      const topicTitle = `Syllabus Topic Week ${w}`;
+      const topicTitle = `Week ${w}`;
       const topicId = `topic_${cleanId.toLowerCase()}_w${w}`;
 
       const defaultSub: SubTopic = {
@@ -1215,12 +1333,6 @@ export default function App() {
     return null;
   })();
 
-  const handleSaveCalibration = async () => {
-    if (!activeSelectionDetails || !calibratedConfidence) return;
-    const { topicRecord, subTopicIndex } = activeSelectionDetails;
-    await handleSetConfidence(topicRecord, subTopicIndex, calibratedConfidence);
-    alert("Spaced repetition confidence calibration saved! It has been archived and synced to the dashboard study queues.");
-  };
 
   const activeFlashcardTopicDetails = (() => {
     if (activeFlashcardsTopicId) {
@@ -1691,6 +1803,16 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#1C1A17] font-retro text-lg flex flex-col selection:bg-[#4C5E24]/10 pb-20 relative overflow-x-hidden">
 
+      {sessionQueue && (
+        <ReviewSession
+          queue={sessionQueue}
+          today={simulatedTodayString}
+          courses={courses || []}
+          onRateTopic={handleRateTopicFromSession}
+          onClose={() => setSessionQueue(null)}
+        />
+      )}
+
       {/* Custom float toast message */}
       {toastMessage && (
         <div className="fixed bottom-16 right-6 z-50 bg-[#FAF8F4] border border-neutral-200 text-[#1C1A17] px-5 py-3 rounded-xl shadow-md flex items-center gap-2.5 animate-bounce-short max-w-sm">
@@ -1707,11 +1829,8 @@ export default function App() {
             <span className="text-2xl">🎓</span>
           </div>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-pixel text-[11px] tracking-tight text-[#1C1A17] uppercase">🎮 STUDYMASTER OS</span>
-              <span className="text-[7px] font-pixel tracking-wider bg-[#55a846] text-white border-2 border-[#1C1A17] px-2 py-0.5 rounded shadow-[1px_1px_0px_0px_#1C1A17]">CART_OK</span>
-            </div>
-            <p className="text-xs text-[#7C7468] font-bold uppercase tracking-wider">13-Week Retro Academic RPG Engine</p>
+            <div className="font-serif-display text-lg font-bold text-[#1C1A17] leading-tight">StudyMaster</div>
+            <p className="text-xs text-[#7C7468] font-semibold">Your 13-week study planner</p>
           </div>
         </div>
 
@@ -1719,10 +1838,10 @@ export default function App() {
         <div className="flex items-center gap-4 bg-white border-2 border-[#1C1A17] px-4 py-2 rounded-xl shadow-[2px_2px_0px_0px_#1C1A17] text-xs min-w-[280px] md:min-w-0">
           <div className="grow">
             <div className="flex items-center justify-between text-[11px] font-medium text-[#7C7468] mb-1">
-              <span className="flex items-center gap-1 font-pixel text-[8px] text-[#FF8C32]">
-                🏆 WEEK {activeWeek} / 13
+              <span className="font-bold text-[11px] text-[#1C1A17]">
+                Week {activeWeek} of 13
               </span>
-              <span className="text-[#55a846] font-pixel text-[8px] font-bold">{progressPercent}% SYNCED</span>
+              <span className="text-[#4C5E24] text-[11px] font-bold ml-3">{progressPercent}% of term</span>
             </div>
             <div className="w-40 h-3.5 bg-[#FAF7F2] border-2 border-[#1C1A17] rounded-none overflow-hidden relative">
               <div 
@@ -1739,13 +1858,13 @@ export default function App() {
             className="retro-btn-press p-2 bg-[#FAF6EE] text-[#1C1A17] border-2 border-[#1C1A17] rounded-lg shadow-[2px_2px_0px_0px_#1C1A17] cursor-pointer flex items-center gap-1.5 text-[8px] font-pixel"
           >
             <span>💾</span>
-            <span className="hidden sm:inline">SAVE</span>
+            <span className="hidden sm:inline">Backup</span>
           </button>
 
-          {/* Action Cog to edit active simulation dates and name */}
-          <button 
-            onClick={() => setShowSettingsModal(true)} 
-            title="Calibrate study parameters"
+          {/* Settings: name, term start, backups */}
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            title="Settings"
             className="retro-btn-press bg-[#FAF6EE] text-[#1C1A17] border-2 border-[#1C1A17] p-2 rounded-lg shadow-[2px_2px_0px_0px_#1C1A17] cursor-pointer hover:bg-[#FAF7F2]"
           >
             <span>⚙️</span>
@@ -1761,205 +1880,214 @@ export default function App() {
         {currentView === 'dashboard' && (
           <div className="space-y-6">
             
-            {/* Elegant Navy/Slate Welcome Banner */}
-            <div className="bg-[#121829] border border-slate-800/80 rounded-3xl p-6 md:p-8 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-6 relative overflow-hidden shadow-md">
-              <div className="space-y-2 md:space-y-3 z-10">
-                <h2 className="text-2xl md:text-3xl font-black tracking-tight leading-none flex items-center gap-2">
-                  <span className="text-amber-400">✨</span> Welcome back, {customUserName}!
-                </h2>
-                <p className="text-sm md:text-base text-slate-300 font-medium leading-relaxed max-w-2xl">
-                  Your courses are fully mapped onto IndexedDB. Current academic workspace context running simulated date <strong className="text-[#FF8C32] font-mono font-bold bg-[#FF8C32]/10 px-2 py-0.5 rounded border border-[#FF8C32]/25">{formatDateDDMMYYYY(simulatedTodayString)}</strong>.
-                </p>
-              </div>
+            {/* WHAT ARE WE DOING TODAY? Review rotation + calendar entries tagged Study / Priority */}
+            {(() => {
+              const hour = new Date().getHours();
+              const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+              const dateLabel = parseLocalDate(simulatedTodayString).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+              const codeOf = (courseId?: string) => (courseId ? courses.find(c => c.id === courseId)?.code || courseId : '');
+              const openTopic = (subTopicId: string) => {
+                const ref = findTopic(topics, subTopicId);
+                if (ref) handleLaunchSubTopic(ref.record.courseId, ref.record.weekNumber, subTopicId);
+              };
+              const levelDot: Record<string, string> = { RED: '#E0675F', YELLOW: '#E3A23B', GREEN: '#6FAE5B' };
+              const priorityCount = todayPriorityEvents.length + dueTopicRefs.length;
+              const doneCount = todayPriorityEvents.filter(ev => ev.doneDates?.includes(simulatedTodayString)).length;
+              return (
+                <section
+                  aria-label="What are we doing today?"
+                  className="rounded-3xl p-5 md:p-8 text-white shadow-md"
+                  style={{ background: 'linear-gradient(135deg, #20281A 0%, #2E3A22 100%)' }}
+                >
+                  <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
+                    <div>
+                      <p className="text-sm font-semibold text-[#C9D6A8]">{greeting}, {customUserName}</p>
+                      <h2 className="text-3xl md:text-4xl font-bold leading-tight mt-1">What are we doing today?</h2>
+                      <p className="text-sm text-white/70 font-medium mt-1.5">{dateLabel} · Week {activeWeek} of 13</p>
+                    </div>
+                    {dueTopicRefs.length > 0 && (
+                      <button
+                        onClick={() => handleStartSession(dueTopicRefs)}
+                        className="self-start md:self-auto shrink-0 px-5 py-3 rounded-2xl bg-[#E9F0D6] text-[#20281A] font-bold text-sm flex items-center gap-2 cursor-pointer hover:bg-white transition-colors"
+                      >
+                        <Play className="w-4 h-4 fill-current" /> Review {dueTopicRefs.length} {dueTopicRefs.length === 1 ? 'topic' : 'topics'}
+                      </button>
+                    )}
+                  </div>
 
-              <div className="flex gap-3 items-center shrink-0 z-10 flex-wrap">
-                <button 
-                  onClick={() => {
-                    const todayStr = new Date().toISOString().split('T')[0];
-                    setSimDate(todayStr);
-                    alert("Simulated date synchronized to modern device clock!");
-                  }}
-                  className="px-4 py-2.5 bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/50 rounded-xl text-xs font-semibold text-slate-200 transition-all cursor-pointer flex items-center gap-2"
-                >
-                  <span className="text-sm">🔄</span> Synchronize Real Clock
-                </button>
-                <button 
-                  onClick={() => setShowSettingsModal(true)}
-                  className="px-4 py-2.5 bg-[#FF8C32] hover:bg-[#E06E1A] text-slate-950 font-bold rounded-xl text-xs transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
-                >
-                  Adjust Term Plan
-                </button>
-              </div>
-            </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] gap-4">
+                    {/* Priorities */}
+                    <div className="bg-white/[0.06] rounded-2xl p-4 md:p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-bold">Today's priorities</h3>
+                        {priorityCount > 0 && (
+                          <span className="text-xs font-semibold text-white/60">
+                            {todayPriorityEvents.length > 0 ? `${doneCount}/${todayPriorityEvents.length} planned done` : ''}
+                            {todayPriorityEvents.length > 0 && dueTopicRefs.length > 0 ? ' · ' : ''}
+                            {dueTopicRefs.length > 0 ? `${dueTopicRefs.length} to review` : ''}
+                          </span>
+                        )}
+                      </div>
+
+                      {priorityCount === 0 && (
+                        <div className="text-sm text-white/70 space-y-3 py-2">
+                          <p>Nothing planned for today. Add a <strong className="text-white">Study</strong> or <strong className="text-white">Priority</strong> entry in the calendar, or finish a topic with a rating so it joins your review rotation.</p>
+                          <button onClick={() => handlePlanStudy()} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold cursor-pointer">
+                            + Plan something for today
+                          </button>
+                        </div>
+                      )}
+
+                      {todayPriorityEvents.length > 0 && (
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-white/50">Planned</p>
+                          {todayPriorityEvents.map(ev => {
+                            const done = !!ev.doneDates?.includes(simulatedTodayString);
+                            const t = tagStyle(ev.tag);
+                            return (
+                              <div key={ev.id} className="flex items-center gap-3 bg-white/[0.06] rounded-xl px-3 py-2.5">
+                                <button
+                                  onClick={() => handleToggleEventDone(ev, simulatedTodayString, !done)}
+                                  aria-label={done ? 'Mark not done' : 'Mark done'}
+                                  className={`h-5 w-5 shrink-0 rounded-md border-2 flex items-center justify-center cursor-pointer ${done ? 'bg-[#9BC27E] border-[#9BC27E]' : 'border-white/40 hover:border-white'}`}
+                                >
+                                  {done && <CheckCircle2 className="h-3.5 w-3.5 text-[#20281A]" />}
+                                </button>
+                                <div className={`grow min-w-0 ${done ? 'opacity-50 line-through' : ''}`}>
+                                  <p className="text-sm font-semibold truncate">{ev.title}</p>
+                                  <p className="text-[11px] text-white/60 font-medium">
+                                    <span style={{ color: t.bg }}>{t.label}</span>
+                                    {ev.start ? ` · ${formatTime(ev.start)}${ev.end ? `–${formatTime(ev.end)}` : ''}` : ''}
+                                    {ev.courseId ? ` · ${codeOf(ev.courseId)}` : ''}
+                                  </p>
+                                </div>
+                                {ev.subTopicId && (
+                                  <button onClick={() => openTopic(ev.subTopicId!)} className="shrink-0 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-bold cursor-pointer">
+                                    Open
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {dueTopicRefs.length > 0 && (
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-white/50">Due for review</p>
+                          {dueTopicRefs.map(ref => {
+                            const overdue = daysBetween(ref.due, simulatedTodayString);
+                            const cards = topicReviewCards(ref.sub).length;
+                            return (
+                              <div key={ref.sub.subTopicId} className="flex items-center gap-3 bg-white/[0.06] rounded-xl px-3 py-2.5">
+                                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: levelDot[ref.sub.confidenceStatus] || '#999' }} title={`Last rated ${LEVEL_LABEL[ref.sub.confidenceStatus as Level] || ''}`} />
+                                <div className="grow min-w-0">
+                                  <p className="text-sm font-semibold truncate">{ref.sub.title}</p>
+                                  <p className="text-[11px] text-white/60 font-medium">
+                                    {codeOf(ref.record.courseId)} · Week {ref.record.weekNumber} · {overdue > 0 ? `${overdue} ${overdue === 1 ? 'day' : 'days'} overdue` : 'due today'}
+                                    {cards > 0 ? ` · ${cards} ${cards === 1 ? 'card' : 'cards'}` : ''}
+                                  </p>
+                                </div>
+                                <button onClick={() => openTopic(ref.sub.subTopicId)} className="hidden sm:block shrink-0 px-3 py-1.5 rounded-full hover:bg-white/10 text-xs font-bold text-white/70 cursor-pointer">
+                                  Notes
+                                </button>
+                                <button onClick={() => handleStartSession([ref])} className="shrink-0 px-3 py-1.5 rounded-full bg-[#E9F0D6] text-[#20281A] text-xs font-bold cursor-pointer hover:bg-white">
+                                  Review
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Schedule */}
+                    <div className="bg-white/[0.06] rounded-2xl p-4 md:p-5 space-y-3">
+                      <h3 className="text-lg font-bold">Today's schedule</h3>
+                      {todayScheduleEvents.length === 0 ? (
+                        <div className="text-sm text-white/70 space-y-3">
+                          <p>No classes or events today.</p>
+                          <button
+                            onClick={() => {
+                              setCalendarOpenRequest({ draft: { tag: 'class', date: simulatedTodayString, start: '09:00', end: '10:00', repeatWeekly: true, repeatUntil: termEndDate }, nonce: Date.now() });
+                              window.setTimeout(() => document.getElementById('calendar')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                            }}
+                            className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold cursor-pointer"
+                          >
+                            + Add a class to your timetable
+                          </button>
+                        </div>
+                      ) : (
+                        <ol className="space-y-2">
+                          {todayScheduleEvents.map(ev => {
+                            const t = tagStyle(ev.tag);
+                            return (
+                              <li key={ev.id} className="flex gap-3">
+                                <span className="w-16 shrink-0 text-xs font-bold text-white/60 pt-0.5">{ev.start ? formatTime(ev.start) : 'All day'}</span>
+                                <div className="grow min-w-0 border-l-2 pl-3" style={{ borderColor: t.color === '#57534E' ? '#A8A29E' : t.bg }}>
+                                  <p className="text-sm font-semibold truncate">{ev.title}</p>
+                                  <p className="text-[11px] text-white/60">
+                                    {t.label}{ev.end ? ` · until ${formatTime(ev.end)}` : ''}{ev.courseId ? ` · ${codeOf(ev.courseId)}` : ''}
+                                  </p>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ol>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              );
+            })()}
 
             {/* Launchpad Content Grid: Left 2 columns containing Courses + spaced-rep, Right 1 column containing Deadlines */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
               {/* Left Grid: Spaced-Repetition Queue & Courses List */}
               <div className="lg:col-span-2 space-y-6">
-                
-                {/* 1. AUTO-PILOT STUDY QUEUE (Spaced Repetition System) */}
-                <section className="bg-[#FAF6EE] border-4 border-[#1C1A17] rounded-3xl shadow-[6px_6px_0px_0px_#1C1A17] overflow-hidden animate-fade-in text-[#1C1A17]">
-                  {(() => {
-                    const dueItems = spacedRepetitionQueue.filter(item => item.status === 'DUE');
-                    const upcomingItems = spacedRepetitionQueue.filter(item => item.status === 'UPCOMING');
 
-                    return (
-                      <>
-                        <div className="bg-[#FFF4E5] px-6 py-4.5 border-b-4 border-[#1C1A17] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                          <div className="flex items-center gap-3">
-                            <span className="text-2xl">⏳</span>
-                            <div>
-                              <h3 className="font-pixel text-[11px] text-[#1C1A17] uppercase tracking-tight">Active Spaced-Repetition Quests</h3>
-                              <p className="text-xs text-[#7C7468] font-bold">Automated review intervals based on confidence status</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {dueItems.length > 0 && (
-                              <span className="text-[7px] font-pixel bg-[#FFF0EF] border-2 border-[#1C1A17] text-[#9E2A2B] px-3 py-1 rounded shadow-[2px_2px_0px_0px_#1C1A17] animate-pulse">
-                                {dueItems.length} DUE NOW!
-                              </span>
-                            )}
-                            {upcomingItems.length > 0 && (
-                              <span className="text-[7px] font-pixel bg-[#EAF5FC] border-2 border-[#1C1A17] text-[#1E6B9D] px-3 py-1 rounded shadow-[2px_2px_0px_0px_#1C1A17]">
-                                {upcomingItems.length} PREPPED
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="p-5 md:p-6 bg-[#FAF6EE]">
-                          {spacedRepetitionQueue.length === 0 ? (
-                            <div className="text-center py-10 px-4 bg-white rounded-2xl border-4 border-[#1C1A17] shadow-[4px_4px_0px_0px_#1C1A17]">
-                              <span className="text-4xl block mb-2.5">🏆</span>
-                              <h4 className="font-pixel text-[10px] text-[#1C1A17] uppercase">All Quests Completed!</h4>
-                              <p className="text-xs text-[#7C7468] mt-1.5 max-w-sm mx-auto font-bold">
-                                You are in perfect spaced standing. Configure confidence levels of subtopics inside your workspace map to generate custom automatic review schedules!
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="space-y-5 max-h-[380px] overflow-y-auto pr-1">
-                              
-                              {/* DUE NOW ROUNDS */}
-                              {dueItems.length > 0 && (
-                                <div className="space-y-3">
-                                  <h4 className="text-xs font-pixel text-[#9E2A2B] flex items-center gap-1.5 uppercase">
-                                    🚨 OVERDUE REVIEWS ({dueItems.length})
-                                  </h4>
-                                  <div className="space-y-3">
-                                    {dueItems.map((item, qidx) => {
-                                      const clrSet = getCourseColors(item.color);
-                                      return (
-                                        <div 
-                                          key={`due-${qidx}`} 
-                                          className="group flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-[#FFF5F4] hover:bg-[#FFEBEA] text-[#1C1A17] rounded-2xl border-4 border-[#1C1A17] shadow-[3px_3px_0px_0px_#1C1A17] transition-all"
-                                        >
-                                          <div className="flex items-start gap-3.5 grow min-w-0">
-                                            <input
-                                              type="checkbox"
-                                              checked={!!item.subTopic.completed}
-                                              onChange={(e) => handleToggleSubTopicComplete(item.topicRecord, item.subIdx, e.target.checked)}
-                                              className="mt-1 h-5 w-5 rounded border-2 border-[#1C1A17] text-[#9E2A2B] focus:ring-0 cursor-pointer accent-[#9E2A2B] shrink-0"
-                                              title="Mark task as completed"
-                                            />
-                                            <div className="space-y-1.5 grow min-w-0">
-                                              <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="text-[7px] font-pixel bg-white text-[#1C1A17] border-2 border-[#1C1A17] px-2 py-0.5 rounded shadow-[1px_1px_0px_0px_#1C1A17]">
-                                                  {item.courseCode}
-                                                </span>
-                                                <span className="text-xs font-bold text-[#7C7468]">Week {item.topicRecord.weekNumber}</span>
-                                                <span className="h-2.5 w-2.5 rounded bg-red-500 border border-[#1C1A17] animate-ping shrink-0" />
-                                                <span className="text-[7px] font-pixel text-red-600 bg-white border-2 border-[#1C1A17] px-1.5 py-0.5 rounded">{item.subTopic.confidenceStatus} CALIBRATION</span>
-                                              </div>
-                                              <h4 className="text-sm font-bold text-[#1C1A17] leading-tight font-sans">{item.subTopic.title}</h4>
-                                              <p className="text-xs text-[#7C7468] font-bold">Concept Module: {item.topicRecord.topicTitle}</p>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0 pl-8 md:pl-0">
-                                            <span className="text-[8px] font-pixel text-[#9E2A2B] bg-white px-2 py-1 rounded border-2 border-[#1C1A17] shadow-[1px_1px_0px_0px_#1C1A17]">
-                                              {item.daysOverdue >= 1 ? `${item.daysOverdue}d ago` : 'today'}
-                                            </span>
-                                            <button
-                                              onClick={() => handleLaunchSubTopic(item.topicRecord.courseId, item.topicRecord.weekNumber, item.subTopic.subTopicId)}
-                                              className="retro-btn-press px-4 py-2 bg-[#9E2A2B] text-white border-2 border-[#1C1A17] rounded-lg text-xs font-pixel font-bold cursor-pointer flex items-center gap-1 shadow-[2px_2px_0px_0px_#1C1A17]"
-                                            >
-                                              START ⚔️
-                                            </button>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* UPCOMING REVIEWS ROUNDS */}
-                              {upcomingItems.length > 0 && (
-                                <div className="space-y-3 pt-2">
-                                  <h4 className="text-xs font-pixel text-[#1E6B9D] flex items-center gap-1.5 uppercase">
-                                    ⏳ FUTURE ADVENTURES ({upcomingItems.length})
-                                  </h4>
-                                  <div className="space-y-2.5">
-                                    {upcomingItems.map((item, qidx) => {
-                                      const clrSet = getCourseColors(item.color);
-                                      const daysLeft = Math.abs(item.daysOverdue);
-                                      return (
-                                        <div 
-                                          key={`upcoming-${qidx}`} 
-                                          className="group flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 bg-white hover:bg-[#FAF7F2] rounded-2xl border-4 border-[#1C1A17] shadow-[3px_3px_0px_0px_#1C1A17] transition-all"
-                                        >
-                                          <div className="flex items-start gap-3 grow min-w-0">
-                                            <input
-                                              type="checkbox"
-                                              checked={!!item.subTopic.completed}
-                                              onChange={(e) => handleToggleSubTopicComplete(item.topicRecord, item.subIdx, e.target.checked)}
-                                              className="mt-0.5 h-4.5 w-4.5 rounded border-2 border-[#1C1A17] text-[#1E6B9D] focus:ring-0 cursor-pointer accent-[#1E6B9D] shrink-0"
-                                              title="Mark task as completed"
-                                            />
-                                            <div className="space-y-1.5 grow min-w-0">
-                                              <div className="flex items-center gap-2 flex-wrap">
-                                                <span className={`text-[7px] font-pixel bg-white border-2 border-[#1C1A17] px-2 py-0.5 rounded shadow-[1px_1px_0px_0px_#1C1A17] text-[#1C1A17]`}>
-                                                  {item.courseCode}
-                                                </span>
-                                                <span className="text-xs font-bold text-[#7C7468]">Week {item.topicRecord.weekNumber}</span>
-                                                <span className={`h-2.5 w-2.5 rounded-full border border-[#1C1A17] ${item.subTopic.confidenceStatus === 'RED' ? 'bg-red-500' : item.subTopic.confidenceStatus === 'YELLOW' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
-                                                <span className="text-[7px] font-pixel text-[#7C7468] uppercase bg-[#FAF6EE] px-1.5 py-0.5 rounded border border-[#EAE3D5]">{item.subTopic.confidenceStatus} CALIBRATED</span>
-                                              </div>
-                                              <h4 className="text-sm font-bold text-[#1C1A17] leading-tight font-sans">{item.subTopic.title}</h4>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0 pl-7 md:pl-0">
-                                            <span className="text-xs text-[#7C7468] font-bold italic">
-                                              In {daysLeft} {daysLeft === 1 ? 'day' : 'days'} ({formatDateDDMMYYYY(item.subTopic.nextReviewDate)})
-                                            </span>
-                                            <button
-                                              onClick={() => handleLaunchSubTopic(item.topicRecord.courseId, item.topicRecord.weekNumber, item.subTopic.subTopicId)}
-                                              className="retro-btn-press px-3.5 py-1.5 bg-white text-[#1C1A17] border-2 border-[#1C1A17] rounded-lg text-[10px] font-bold cursor-pointer flex items-center gap-1 shadow-[2px_2px_0px_0px_#1C1A17]"
-                                            >
-                                              {daysLeft <= 0 ? "PRACTICE NOW 🛡️" : "PRE-PRACTICE Early"}
-                                            </button>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </section>
+                {/* Upcoming reviews (topics due today are in "What are we doing today?") */}
+                {(() => {
+                  const upcoming = rotationTopics(topics || [])
+                    .filter(r => r.due > simulatedTodayString)
+                    .sort((x, y) => x.due.localeCompare(y.due));
+                  if (upcoming.length === 0) return null;
+                  const shown = upcoming.slice(0, 6);
+                  return (
+                    <section className="bg-white border border-[#E2DDD5] rounded-3xl p-5 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-bold text-[#1C1A17]">Coming up for review</h3>
+                        <span className="text-xs font-semibold text-[#7C7468]">{upcoming.length} in rotation</span>
+                      </div>
+                      <ul className="divide-y divide-[#EFEBE4]">
+                        {shown.map(ref => {
+                          const inDays = daysBetween(simulatedTodayString, ref.due);
+                          const code = courses.find(c => c.id === ref.record.courseId)?.code || ref.record.courseId;
+                          return (
+                            <li key={ref.sub.subTopicId} className="flex items-center gap-3 py-2.5">
+                              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: ({ RED: '#C2413B', YELLOW: '#D08A1E', GREEN: '#4C8A3A' } as Record<string, string>)[ref.sub.confidenceStatus] || '#999' }} />
+                              <button onClick={() => handleLaunchSubTopic(ref.record.courseId, ref.record.weekNumber, ref.sub.subTopicId)} className="grow min-w-0 text-left cursor-pointer">
+                                <p className="text-sm font-semibold text-[#1C1A17] truncate hover:underline">{ref.sub.title}</p>
+                                <p className="text-[11px] text-[#7C7468]">{code} · Week {ref.record.weekNumber} · last rated {LEVEL_LABEL[ref.sub.confidenceStatus as Level]}</p>
+                              </button>
+                              <span className="text-xs font-semibold text-[#3F3A33] shrink-0">{inDays === 1 ? 'Tomorrow' : `In ${inDays} days`}</span>
+                              <button onClick={() => handleStartSession([ref])} className="hidden sm:block shrink-0 px-3 py-1.5 rounded-full border border-[#E2DDD5] text-[11px] font-bold text-[#1C1A17] hover:bg-[#FAF7F2] cursor-pointer">
+                                Review early
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {upcoming.length > shown.length && <p className="text-xs text-[#7C7468]">+{upcoming.length - shown.length} more later this term</p>}
+                    </section>
+                  );
+                })()}
 
                 {/* 2. COURSE WORKSPACE GRID WITH CUSTOM BOOTSTRAPPER */}
                 <section className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-pixel text-[11px] text-[#1C1A17] uppercase tracking-tight">🎒 Academic Course Map</h3>
+                    <h3 className="font-pixel text-[11px] text-[#1C1A17] uppercase tracking-tight">Courses</h3>
                     <button 
                       type="button"
                       onClick={() => setCourseEditorActive(!courseEditorActive)}
@@ -1969,7 +2097,7 @@ export default function App() {
                           : 'bg-[#FAF6EE] text-[#1C1A17] hover:bg-[#FAF7F2]'
                       }`}
                     >
-                      🛠️ EDITOR {courseEditorActive ? 'ON' : 'OFF'}
+                      {courseEditorActive ? 'Close' : '+ Add course'}
                     </button>
                   </div>
 
@@ -1978,18 +2106,18 @@ export default function App() {
                       <div className="flex items-center justify-between border-b-2 border-[#1C1A17] pb-3">
                         <div className="flex items-center gap-2">
                           <span className="text-xl">➕</span>
-                          <span className="font-pixel text-[10px] text-[#1C1A17] uppercase">BOOTSTRAP CUSTOM ADVENTURE</span>
+                          <span className="font-pixel text-[10px] text-[#1C1A17] uppercase">New course</span>
                         </div>
-                        <span className="text-[7px] font-pixel bg-[#E8F6F0] text-[#1E5D44] border-2 border-[#1C1A17] px-2.5 py-1 rounded shadow-[1px_1px_0px_0px_#1C1A17]">13-WEEK AUTO SETUP</span>
+                        <span className="text-[7px] font-pixel bg-[#E8F6F0] text-[#1E5D44] border-2 border-[#1C1A17] px-2.5 py-1 rounded shadow-[1px_1px_0px_0px_#1C1A17]">Creates 13 weeks</span>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                         <div className="space-y-1">
-                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Unique ID (e.g. CS101)</label>
+                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Course code</label>
                           <input 
                             type="text" 
                             required 
-                            placeholder="e.g. CS303, MATH101"
+                            placeholder="e.g. CS 303"
                             value={customCourseId}
                             onChange={(e) => setCustomCourseId(e.target.value)}
                             className="bg-white border-2 border-[#1C1A17] px-3.5 py-2 rounded-xl w-full font-mono text-[#1C1A17] focus:outline-none focus:ring-0 transition-all"
@@ -1997,19 +2125,7 @@ export default function App() {
                         </div>
                         
                         <div className="space-y-1">
-                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Shorthand Display</label>
-                          <input 
-                            type="text" 
-                            required 
-                            placeholder="e.g. CS 303, MATH 101"
-                            value={customCourseCode}
-                            onChange={(e) => setCustomCourseCode(e.target.value)}
-                            className="bg-white border-2 border-[#1C1A17] px-3.5 py-2 rounded-xl w-full font-mono text-[#1C1A17] focus:outline-none focus:ring-0 transition-all"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Course Title Name</label>
+                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Course name</label>
                           <input 
                             type="text" 
                             required 
@@ -2021,7 +2137,7 @@ export default function App() {
                         </div>
 
                         <div className="space-y-1">
-                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Cartridge Color</label>
+                          <label className="text-[#1C1A17] font-bold block uppercase text-[10px]">Colour</label>
                           <select 
                             value={customCourseColor}
                             onChange={(e) => setCustomCourseColor(e.target.value)}
@@ -2051,7 +2167,7 @@ export default function App() {
                           type="submit" 
                           className="retro-btn-press px-4 py-2 bg-[#FF8C32] text-white border-2 border-[#1C1A17] rounded-lg font-pixel text-[8px] cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                         >
-                          ⚔️ BOOTSTRAP ADVENTURE
+                          Create course
                         </button>
                       </div>
                     </form>
@@ -2061,9 +2177,9 @@ export default function App() {
                     <div className="bg-[#FAF6EE] border-4 border-[#1C1A17] rounded-3xl p-8 py-10 text-center space-y-3.5 shadow-[6px_6px_0px_0px_#1C1A17]">
                       <span className="text-4xl block">📦</span>
                       <div className="space-y-1">
-                        <h4 className="font-pixel text-[10px] text-[#1C1A17] uppercase">No Syllabus Cartridges Loaded</h4>
+                        <h4 className="font-pixel text-[10px] text-[#1C1A17] uppercase">No courses yet</h4>
                         <p className="text-[#7C7468] text-xs max-w-sm mx-auto leading-relaxed font-bold">
-                          Ready to sync? Toggle <strong>Editor Mode</strong> above to add custom course categories and auto-generate structured 13-week milestones!
+                          Add your first course. It gets 13 weeks you can fill with topics.
                         </p>
                       </div>
                       <button
@@ -2071,7 +2187,7 @@ export default function App() {
                         onClick={() => setCourseEditorActive(true)}
                         className="retro-btn-press px-4 py-2 bg-[#1C1A17] text-white border-2 border-[#1C1A17] rounded-lg text-xs font-bold cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                       >
-                        CREATE FIRST CART 🎮
+                        Add a course
                       </button>
                     </div>
                   ) : (
@@ -2191,7 +2307,7 @@ export default function App() {
                                 </span>
                                 {!courseEditorActive && (
                                   <div className="text-[8px] font-pixel text-[#7C7468] group-hover:text-[#FF8C32] transition-colors flex items-center gap-1">
-                                    LOAD 🕹️
+                                    Open
                                   </div>
                                 )}
                               </div>
@@ -2201,29 +2317,29 @@ export default function App() {
                               </h4>
                             </div>
 
-                            {/* Stat Indicators Section */}
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between text-xs text-[#7C7468]">
-                                <span className="font-bold uppercase tracking-wider text-[10px]">Mastery Quotient</span>
-                                <span className="font-pixel text-[8px] font-black text-[#1C1A17]">{stats.completionRate}%</span>
-                              </div>
-                              
-                              {/* Complete bar indicator */}
-                              <div className="w-full h-3.5 bg-[#FAF7F2] border-2 border-[#1C1A17] rounded-none overflow-hidden relative">
-                                <div 
-                                  className={`h-full ${cls.accent} border-r-2 border-[#1C1A17] transition-all duration-300`}
-                                  style={{ width: `${stats.completionRate}%` }}
-                                />
-                              </div>
-
-                              {/* Bullet metrics counts */}
-                              <div className="flex justify-between items-center text-[9px] font-mono font-bold text-[#7C7468] pt-1">
-                                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500 border border-[#1C1A17]" /> {stats.confidenceCount.GREEN}</span>
-                                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400 border border-[#1C1A17]" /> {stats.confidenceCount.YELLOW}</span>
-                                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500 border border-[#1C1A17]" /> {stats.confidenceCount.RED}</span>
-                                <span className="font-pixel text-[7px] bg-[#FAF6EE] border-2 border-[#1C1A17] px-1 py-0.5 rounded shadow-[1px_1px_0px_0px_#1C1A17]">{stats.totalSubtopics} STAGES</span>
-                              </div>
-                            </div>
+                            {/* Course progress: SQ3R steps done across all topics */}
+                            {(() => {
+                              const prog = courseProgress(topics, course.id);
+                              return (
+                                <div className="space-y-1.5">
+                                  <div className="flex items-baseline justify-between">
+                                    <span className="text-xs font-semibold text-[#7C7468]">Progress</span>
+                                    <span className="text-sm font-bold text-[#1C1A17]">{prog.pct}%</span>
+                                  </div>
+                                  <div className="w-full h-2.5 bg-[#EFEBE4] rounded-full overflow-hidden" role="progressbar" aria-valuenow={prog.pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${course.code} progress`}>
+                                    <div className="h-full rounded-full transition-all duration-300" style={{ width: `${prog.pct}%`, background: '#4C5E24' }} />
+                                  </div>
+                                  <div className="flex items-center justify-between text-[11px] font-semibold text-[#7C7468]">
+                                    <span>{prog.done} of {prog.total} topics concluded</span>
+                                    <span className="flex items-center gap-2">
+                                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" />{stats.confidenceCount.RED}</span>
+                                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-400" />{stats.confidenceCount.YELLOW}</span>
+                                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />{stats.confidenceCount.GREEN}</span>
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })}
@@ -2238,7 +2354,7 @@ export default function App() {
                   <div className="bg-[#FAF6EE] px-6 py-4 border-b-4 border-[#1C1A17] flex items-center justify-between">
                     <div className="flex items-center gap-2 text-[#1C1A17]">
                       <span className="text-xl">⏳</span>
-                      <h3 className="font-pixel text-[10px] uppercase tracking-tight">URGENCY RADAR</h3>
+                      <h3 className="font-pixel text-[10px] uppercase tracking-tight">Deadlines</h3>
                     </div>
                   </div>
 
@@ -2246,7 +2362,7 @@ export default function App() {
                     
                     {/* Simplified Form Inline to Add Course Deadlines */}
                     <form onSubmit={handleAddDeadline} className="bg-[#FAF6EE] p-4.5 rounded-2xl border-2 border-[#1C1A17] space-y-3.5 text-xs shadow-[2px_2px_0px_0px_#1C1A17]">
-                      <p className="font-pixel text-[8px] text-[#1C1A17] uppercase">LOG NEW DEADLINE</p>
+                      <p className="font-pixel text-[8px] text-[#1C1A17] uppercase">Add a deadline</p>
                       
                       <div className="space-y-2">
                         <input 
@@ -2297,7 +2413,7 @@ export default function App() {
                     {/* Deadline Cards List */}
                     <div className="space-y-3.5 max-h-96 overflow-y-auto pr-1">
                       {sortedDeadlines.length === 0 ? (
-                        <p className="text-center text-[9px] font-pixel text-slate-400 py-4 uppercase">NO DEADLINES ACTIVE 🛡️</p>
+                        <p className="text-center text-[9px] font-pixel text-slate-400 py-4 uppercase">No deadlines</p>
                       ) : (
                         sortedDeadlines.map((dl) => {
                           const targetCourse = courses.find(c => c.id === dl.courseId);
@@ -2375,7 +2491,7 @@ export default function App() {
                     <div className="flex items-center gap-2 text-[#1C1A17]">
                       <span className="text-xl">🧬</span>
                       <div>
-                        <h3 className="font-pixel text-[10px] uppercase tracking-tight">KNOWLEDGE GAPS</h3>
+                        <h3 className="font-pixel text-[10px] uppercase tracking-tight">Weak spots</h3>
                       </div>
                     </div>
                   </div>
@@ -2383,7 +2499,7 @@ export default function App() {
                   <div className="p-5.5 space-y-4 bg-white">
                     {/* Inline Form to Add Prerequisite Review Node */}
                     <form onSubmit={handleAddUrgentReview} className="bg-[#FAF6EE] p-4.5 rounded-2xl border-2 border-[#1C1A17] space-y-3.5 text-xs shadow-[2px_2px_0px_0px_#1C1A17]">
-                      <p className="font-pixel text-[8px] text-[#1C1A17] uppercase">FLAG SYLLABUS GAP</p>
+                      <p className="font-pixel text-[8px] text-[#1C1A17] uppercase">Note something you're weak on</p>
 
                       <div className="space-y-2">
                         <input 
@@ -2421,7 +2537,7 @@ export default function App() {
                             type="submit"
                             className="retro-btn-press px-4 py-2 bg-[#FF8C32] text-white font-pixel text-[8px] border-2 border-[#1C1A17] rounded-lg cursor-pointer flex items-center gap-1 shrink-0 shadow-[2px_2px_0px_0px_#1C1A17]"
                           >
-                            ⚡ GAP-TRACK
+                            Open
                           </button>
                         </div>
                       </div>
@@ -2501,14 +2617,17 @@ export default function App() {
 
             </div>
 
-            {/* Bottom Term Calendar Section */}
-            <TermCalendar
+            {/* Calendar: personal timetable, study blocks, deadlines */}
+            <PlannerCalendar
+              events={calendarEvents}
               deadlines={deadlines || []}
               courses={courses || []}
-              simulatedTodayString={simulatedTodayString}
-              getCourseColors={getCourseColors}
-              onAddEvent={handleCalendarAddEvent}
-              onDeleteEvent={handleCalendarDeleteEvent}
+              topics={topics || []}
+              today={simulatedTodayString}
+              termEnd={termEndDate}
+              onSave={handleSaveEvent}
+              onDelete={handleDeleteEvent}
+              openRequest={calendarOpenRequest}
             />
 
           </div>
@@ -2525,7 +2644,7 @@ export default function App() {
                   onClick={() => setCurrentView('dashboard')}
                   className="retro-btn-press px-4 py-2 bg-white hover:bg-[#FAF7F2] text-[#1C1A17] border-2 border-[#1C1A17] rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-[2px_2px_0px_0px_#1C1A17]"
                 >
-                  <ArrowLeft className="h-4 w-4 text-[#FF8C32]" /> Exit Workspace
+                  <ArrowLeft className="h-4 w-4 text-[#FF8C32]" /> All courses
                 </button>
                 <div className="h-6 w-px bg-[#1C1A17] hidden md:block" />
                 <div>
@@ -2535,7 +2654,12 @@ export default function App() {
                     </span>
                     <h3 className="font-pixel text-xs text-[#1C1A17] uppercase tracking-tight">{activeCourse.name}</h3>
                   </div>
-                  <p className="text-[10px] text-[#7C7468] font-bold mt-0.5">Week accordion menu lists custom curriculum guidelines</p>
+                  {(() => { const prog = courseProgress(topics, activeCourse.id); return (
+                    <div className="flex items-center gap-2 mt-1.5 w-full max-w-xs">
+                      <div className="grow h-2 bg-[#EFEBE4] rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${prog.pct}%`, background: '#4C5E24' }} /></div>
+                      <span className="text-[11px] font-semibold text-[#7C7468] whitespace-nowrap">{prog.pct}% · {prog.done}/{prog.total} topics</span>
+                    </div>
+                  ); })()}
                 </div>
               </div>
 
@@ -2550,7 +2674,7 @@ export default function App() {
                   }`}
                   title="Toggle custom detailed structure, topic addition, and syllabus editing"
                 >
-                  🛠️ {syllabusEditorMode ? 'Structure Editor [ON]' : 'Subject Editor Mode'}
+                  ✏️ {syllabusEditorMode ? 'Done editing' : 'Edit topics'}
                 </button>
 
                 {syllabusEditorMode ? (
@@ -2558,7 +2682,7 @@ export default function App() {
                     onClick={() => handleAddSyllabusTopic(activeCourse.id, activeCourseTopics)}
                     className="retro-btn-press px-4 py-2 bg-[#1C1A17] text-white hover:bg-[#322F2A] rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center gap-1 border-2 border-[#1C1A17] shadow-[2px_2px_0px_0px_#1C1A17]"
                   >
-                    <Plus className="h-3.5 w-3.5 text-[#FF8C32]" /> New Topic Week
+                    <Plus className="h-3.5 w-3.5 text-[#FF8C32]" /> Add week topic
                   </button>
                 ) : (
                   <button 
@@ -2568,7 +2692,7 @@ export default function App() {
                     }}
                     className="retro-btn-press px-4 py-2 bg-[#1C1A17] hover:bg-[#322F2A] text-white rounded-xl text-xs font-bold cursor-pointer transition-colors flex items-center gap-1 border-2 border-[#1C1A17] shadow-[2px_2px_0px_0px_#1C1A17]"
                   >
-                    <Plus className="h-3.5 w-3.5 text-[#FF8C32]" /> Add Sub-Topic
+                    <Plus className="h-3.5 w-3.5 text-[#FF8C32]" /> Add topic
                   </button>
                 )}
               </div>
@@ -2581,7 +2705,7 @@ export default function App() {
               {!sidebarHidden && (
                 <nav className="md:col-span-4 bg-white border-4 border-[#1C1A17] rounded-3xl p-5 flex flex-col gap-3.5 h-[650px] overflow-y-auto relative shadow-[4px_4px_0px_0px_#1C1A17]">
                   <div className="flex items-center justify-between pb-2 border-b-2 border-[#1C1A17] sticky top-0 bg-white z-10">
-                    <span className="font-pixel text-[8px] uppercase text-[#7C7468]">13-Week Syllabus Accordion</span>
+                    <span className="font-pixel text-[8px] uppercase text-[#7C7468]">13 weeks</span>
                     <button 
                       onClick={() => setSidebarHidden(true)}
                       className="p-1 text-[#7C7468] hover:text-[#9E2A2B] bg-[#FAF7F2] rounded-lg transition-all cursor-pointer"
@@ -2734,7 +2858,7 @@ export default function App() {
                                           checked={!!sub.completed}
                                           onChange={(e) => handleToggleSubTopicComplete(topicRec, sidx, e.target.checked)}
                                           className="h-3.5 w-3.5 rounded text-[#FF8C32] focus:ring-[#FF8C32] border-[#EAE3D5] cursor-pointer shrink-0 accent-[#FF8C32]"
-                                          title="Toggle completion"
+                                          title="Done with this topic: take it out of your review rotation"
                                         />
                                       </div>
 
@@ -2758,7 +2882,7 @@ export default function App() {
                                         </div>
                                         {isOverdue && (
                                           <span className={`text-[8px] font-black uppercase tracking-wider mt-0.5 ${isActive ? 'text-amber-200' : 'text-[#9E2A2B]'}`}>
-                                            Urgent Due
+                                            Review due
                                           </span>
                                         )}
                                       </button>
@@ -2767,7 +2891,7 @@ export default function App() {
                                       <button 
                                         onClick={() => handleDeleteSubTopic(topicRec.id!, sidx, sub.title)}
                                         className={`p-1 rounded transition-all cursor-pointer ${isActive ? 'text-white/80 hover:text-red-200' : 'text-[#7C7468] hover:text-[#9E2A2B]'}`}
-                                        title="Delete sub-topic node"
+                                        title="Delete topic"
                                       >
                                         <Trash2 className="h-3.5 w-3.5" />
                                       </button>
@@ -2821,7 +2945,7 @@ export default function App() {
                                       onClick={() => handleQuickAddSubTopic(topicRec.id!, activeCourse.id, topicRec.subTopics || [])}
                                       className="w-full text-left p-2 rounded-xl text-[11px] font-bold text-[#FF8C32] bg-[#FFF4E5] border border-[#FFE1B8] hover:bg-[#FFF4E5]/80 flex items-center justify-center gap-1 transition-all cursor-pointer mt-1"
                                     >
-                                      <Plus className="h-3 w-3 text-[#FF8C32] font-black" /> Add Sub-Topic Node
+                                      <Plus className="h-3 w-3 text-[#FF8C32] font-black" /> Add topic
                                     </button>
                                   )}
                                 </div>
@@ -2860,7 +2984,7 @@ export default function App() {
                   onClick={() => setSidebarHidden(false)}
                   className="absolute left-6 top-8 z-10 p-3 bg-[#1C1A17] border-2 border-[#1C1A17] text-white hover:bg-[#322F2A] rounded-xl shadow-[2px_2px_0px_0px_#1C1A17] transition-all cursor-pointer flex items-center gap-2 text-xs font-bold"
                 >
-                  <Menu className="h-4 w-4 text-[#FF8C32]" /> <span>Show Accordion Menu</span>
+                  <Menu className="h-4 w-4 text-[#FF8C32]" /> <span>Show weeks</span>
                 </button>
               )}
 
@@ -2871,9 +2995,9 @@ export default function App() {
                 {!activeSelectionDetails && !activeFlashcardTopicDetails && (
                   <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-[#FAF6EE] rounded-2xl border-4 border-[#1C1A17] shadow-[2px_2px_0px_0px_#1C1A17]">
                     <BookOpen className="h-12 w-12 text-[#FF8C32] mb-3" />
-                    <h4 className="font-pixel text-xs text-[#1C1A17] uppercase tracking-tight">No Module Loaded</h4>
+                    <h4 className="font-pixel text-xs text-[#1C1A17] uppercase tracking-tight">No topic open</h4>
                     <p className="text-xs text-[#7C7468] font-bold mt-2 max-w-sm mx-auto leading-relaxed">
-                      Click any subtopic lecture or the Topic Flashcards deck within the left 13-week syllabus accordion to load resources into this study pane. Or create a custom subtopic node from the options header.
+                      Pick a topic from the week list to open its study guide and notes, or add a new topic.
                     </p>
                     <div className="mt-5 flex gap-2">
                       {activeCourseTopics.length > 0 && activeCourseTopics[0].subTopics?.length > 0 && (
@@ -2884,7 +3008,7 @@ export default function App() {
                           }}
                           className="retro-btn-press px-5 py-2 bg-[#FF8C32] text-white border-2 border-[#1C1A17] rounded-xl text-[9px] font-pixel cursor-pointer shadow-[2px_2px_0px_0px_#1C1A17]"
                         >
-                          Launch Week 1 Core Lecture
+                          Open week 1
                         </button>
                       )}
                     </div>
@@ -3260,8 +3384,19 @@ export default function App() {
                       <div className="space-y-6">
 
                         {/* Interactive Pill Tabs to split Notes & Quiz */}
-                        <div className="flex items-center justify-start border-b border-[#EAE3D5] pb-3 mb-2">
-                          <div className="bg-[#FAF7F2] p-1.5 rounded-full flex items-center gap-1 border border-[#EAE3D5] shadow-xs">
+                        <div className="flex items-center justify-start border-b border-[#EAE3D5] pb-3 mb-2 overflow-x-auto">
+                          <div className="bg-[#FAF7F2] p-1.5 rounded-full flex items-center gap-1 border border-[#EAE3D5] shadow-xs shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setActiveViewTab('guide')}
+                              className={`px-4.5 py-1.5 rounded-full text-xs font-bold tracking-tight transition-all duration-150 flex items-center gap-2 cursor-pointer ${
+                                activeViewTab === 'guide'
+                                  ? 'bg-white text-[#1C1A17] shadow-xs font-bold border border-[#EAE3D5]'
+                                  : 'text-[#7C7468] hover:text-[#1C1A17] bg-transparent'
+                              }`}
+                            >
+                              <span className="text-sm">🧭</span> SQ3R guide
+                            </button>
                             <button
                               type="button"
                               onClick={() => setActiveViewTab('notes')}
@@ -3302,11 +3437,22 @@ export default function App() {
                           </div>
                         </div>
 
-                        {activeViewTab === 'notes' ? (
-                          /* A. Core Markdown Study Notes View */
-                          <article className="prose max-w-none prose-slate bg-[#FAF6EE] border-4 border-[#1C1A17] p-6 rounded-3xl shadow-[4px_4px_0px_0px_#1C1A17] text-xs text-[#1C1A17]">
-                            <MarkdownView content={activeSelectionDetails.subTopic.notesMarkdown} />
-                          </article>
+                        {activeViewTab === 'guide' ? (
+                          /* SQ3R: Survey, Question, Read, Recite, Review */
+                          <Sq3rGuide
+                            key={activeSelectionDetails.subTopic.subTopicId}
+                            sub={activeSelectionDetails.subTopic}
+                            today={simulatedTodayString}
+                            onUpdate={(sq3r) => handleSaveSq3r(activeSelectionDetails.subTopic.subTopicId, sq3r)}
+                            onRate={(level) => rateTopic(activeSelectionDetails.subTopic.subTopicId, level)}
+                          />
+                        ) : activeViewTab === 'notes' ? (
+                          /* Three-part notes: margin, main notes, summary */
+                          <CornellNotes
+                            key={activeSelectionDetails.subTopic.subTopicId}
+                            sub={activeSelectionDetails.subTopic}
+                            onSave={(fields) => handleSaveNoteFields(activeSelectionDetails.subTopic.subTopicId, fields)}
+                          />
                         ) : activeViewTab === 'quiz' ? (
                           /* B. Mastery Quiz Block */
                           <div className="bg-white border-4 border-[#1C1A17] rounded-3xl p-5 md:p-6 space-y-5 shadow-[4px_4px_0px_0px_#1C1A17]">
@@ -3314,11 +3460,11 @@ export default function App() {
                             <div className="flex items-center justify-between flex-wrap gap-2 border-b-2 border-[#1C1A17] pb-3 mb-1">
                               <div className="flex items-center gap-2">
                                 <Award className="h-5 w-5 text-[#FF8C32]" />
-                                <h3 className="font-pixel text-[10px] text-[#1C1A17] uppercase tracking-tight">Module Mastery Check-Quiz</h3>
+                                <h3 className="font-pixel text-[10px] text-[#1C1A17] uppercase tracking-tight">Quiz</h3>
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="text-[8px] font-pixel bg-[#FAF6EE] text-[#1C1A17] border-2 border-[#1C1A17] px-2.5 py-1 rounded shadow-[1px_1px_0px_0px_#1C1A17]">
-                                  PASS GOAL: 80% SCORE REQUIRED
+                                  Pass mark: 80%
                                 </span>
                                 <button
                                   type="button"
@@ -3621,7 +3767,7 @@ export default function App() {
                                         </div>
                                         <div>
                                           <h4 className="text-sm font-bold text-slate-900">
-                                            {quizPassed ? '🎉 Mastery Level Unlocked!' : '❌ Let\'s Review Notes Again!'}
+                                            {quizPassed ? '🎉 Passed!' : '❌ Let\'s Review Notes Again!'}
                                           </h4>
                                           <p className="text-xs text-slate-500">
                                             Grade: <strong className="text-slate-800">{quizScore}% Correct</strong> ({activeSelectionDetails.subTopic.quiz.length} total questions)
@@ -3827,75 +3973,44 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* C. Timed spaced-repetition selector manually configured */}
-                        <section className="border-t border-slate-200 pt-6">
-                          <div className="bg-slate-950 text-slate-100 p-5 rounded-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-5 border border-slate-800 shadow-sm">
-                            <div className="space-y-1 block shrink-0">
-                              <h4 className="font-display font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
-                                🧠 Automated Spaced Repetition Calibration
-                              </h4>
-                              <p className="text-xs text-slate-400 max-w-sm">
-                                Rate confidence status: RED (2 days), YELLOW (5 days), GREEN (14 days). Confirmed rating appears on dashboard queue ONLY after saving.
-                              </p>
-                            </div>
-
-                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 grow justify-end">
-                              {/* Quick selection block */}
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <button
-                                  onClick={() => setCalibratedConfidence('RED')}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                                    calibratedConfidence === 'RED'
-                                      ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-400 font-extrabold'
-                                      : 'bg-transparent text-rose-500 border-rose-950/40 hover:bg-rose-500/10'
-                                  }`}
-                                >
-                                  🔴 Critical (2d)
-                                </button>
-                                <button
-                                  onClick={() => setCalibratedConfidence('YELLOW')}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                                    calibratedConfidence === 'YELLOW'
-                                      ? 'bg-amber-400 hover:bg-amber-500 text-slate-950 border-amber-300 font-extrabold'
-                                      : 'bg-transparent text-amber-400 border-amber-950/40 hover:bg-amber-400/10'
-                                  }`}
-                                >
-                                  🟡 Struggling (5d)
-                                </button>
-                                <button
-                                  onClick={() => setCalibratedConfidence('GREEN')}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                                    calibratedConfidence === 'GREEN'
-                                      ? 'bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-400 font-extrabold'
-                                      : 'bg-transparent text-emerald-500 border-emerald-950/40 hover:bg-emerald-500/10'
-                                  }`}
-                                >
-                                  🟢 Mastered (14d)
-                                </button>
-                              </div>
-
-                              <div className="flex items-center gap-3">
-                                <button
-                                  onClick={handleSaveCalibration}
-                                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg text-xs tracking-wide transition-all cursor-pointer shadow-sm shadow-amber-950/10"
-                                >
-                                  Save Rating
-                                </button>
-
-                                {/* Selected scheduler information */}
-                                {activeSelectionDetails.subTopic.nextReviewDate ? (
-                                  <p className="text-[10px] text-zinc-400 font-mono italic">
-                                    Sync: Due {formatDateDDMMYYYY(activeSelectionDetails.subTopic.nextReviewDate)}
-                                  </p>
+                        {/* Topic status: rotation, review, planning */}
+                        {(() => {
+                          const sub = activeSelectionDetails.subTopic;
+                          const rated = sub.confidenceStatus !== 'NONE';
+                          const due = sub.nextReviewDate ? isoToLocalDay(sub.nextReviewDate) : null;
+                          const ref = findTopic(topics || [], sub.subTopicId);
+                          const pct = Math.round(topicProgress(sub) * 100);
+                          return (
+                            <section className="border-t border-[#EAE3D5] pt-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="text-sm text-[#3F3A33]">
+                                {rated && due ? (
+                                  <span><strong>In review rotation</strong> · rated {LEVEL_LABEL[sub.confidenceStatus as Level]} · next review {parseLocalDate(due).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</span>
                                 ) : (
-                                  <p className="text-[10px] text-zinc-500 font-mono italic">
-                                    No intervals queued.
-                                  </p>
+                                  <span><strong>Not concluded yet</strong> · finish the SQ3R guide and rate it to add it to your review rotation</span>
+                                )}
+                                <span className="block text-xs text-[#7C7468] mt-0.5">Topic progress {pct}%</span>
+                              </div>
+                              <div className="flex gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handlePlanStudy(sub.subTopicId, activeCourse?.id)}
+                                  className="px-4 py-2 rounded-full border border-[#E2DDD5] bg-white text-xs font-bold text-[#1C1A17] hover:bg-[#FAF7F2] cursor-pointer"
+                                >
+                                  Schedule study
+                                </button>
+                                {rated && ref && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartSession([ref])}
+                                    className="px-4 py-2 rounded-full bg-[#4C5E24] text-white text-xs font-bold hover:bg-[#3E4D1D] cursor-pointer"
+                                  >
+                                    Review now
+                                  </button>
                                 )}
                               </div>
-                            </div>
-                          </div>
-                        </section>
+                            </section>
+                          );
+                        })()}
 
                       </div>
                     )}
@@ -4141,7 +4256,7 @@ Answer: First-in, First-out processing queue strategy.`}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-1.5 text-slate-900 font-display">
                 <Sliders className="h-5 w-5 text-amber-500" />
-                <h4 className="font-bold text-base">StudyMaster Calibration Panel</h4>
+                <h4 className="font-bold text-base">Settings</h4>
               </div>
               <button 
                 onClick={() => setShowSettingsModal(false)}
@@ -4155,7 +4270,7 @@ Answer: First-in, First-out processing queue strategy.`}
               
               {/* User Persona */}
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-500 block">STUDENT PROFILE NAME</label>
+                <label className="text-[11px] font-bold text-slate-500 block">YOUR NAME</label>
                 <input 
                   type="text"
                   value={customUserName}
@@ -4173,23 +4288,7 @@ Answer: First-in, First-out processing queue strategy.`}
                   onChange={(e) => setCustomStart(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-md p-2 text-sm focus:outline-none focus:border-amber-500 font-mono"
                 />
-                <p className="text-[10px] text-slate-400">Weekly progress coordinates dynamically shifting between Week 1 and 13 based on this start date.</p>
-              </div>
-
-              {/* Simulated clock settings */}
-              <div className="space-y-1 border-t border-slate-100 pt-4">
-                <label className="text-[11px] font-bold text-slate-500 block flex items-center gap-1">
-                  TEMPORAL SIMULATOR DATE <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1 rounded uppercase font-mono font-black">TEST_ENVIRONMENT</span>
-                </label>
-                <input 
-                  type="date"
-                  value={simDate}
-                  onChange={(e) => setSimDate(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-md p-2 text-sm focus:outline-none focus:border-amber-500 font-mono"
-                />
-                <p className="text-[10px] text-slate-400 leading-snug">
-                  Shift dates arbitrarily to test deadline changes (<em className="text-rose-500">Critical &lt; 24h</em> turns Red and pulses) or verify how spaced repetition scheduled reviews pop up due in real time!
-                </p>
+                <p className="text-[10px] text-slate-400">Used to work out which week of the 13-week term you're in, and how long weekly calendar entries repeat by default.</p>
               </div>
 
               {/* Data Portability */}
@@ -4333,10 +4432,10 @@ Answer: First-in, First-out processing queue strategy.`}
       {/* FOOTER BAR */}
       <footer className="bg-slate-900 text-slate-500 py-6 px-4 border-t border-slate-800 text-center text-xs space-y-1 shrink-0 mt-8">
         <p className="font-mono text-[10px] text-slate-400">
-          STUDY_MASTER LOCAL V2.0 • BUILT WITH DEEP RECALL SYSTEMS • PERSISTENT BROWSER INDEXEDDB STORAGE
+          StudyMaster · saved on this device
         </p>
         <p className="text-slate-500">
-          State variables and syllabus trees save instantly onto Dexie records. Clean sandbox execution ensures absolute client privacy.
+          Everything stays in this browser. Use Backup to keep a copy.
         </p>
       </footer>
 

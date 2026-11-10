@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { Course, TopicRecord, Deadline, Setting, SubTopic, Flashcard, UrgentReview } from './types';
+import { Course, TopicRecord, Deadline, Setting, SubTopic, Flashcard, UrgentReview, CalendarEvent } from './types';
 
 export class StudyMasterDatabase extends Dexie {
   courses!: Table<Course, string>;
@@ -7,6 +7,7 @@ export class StudyMasterDatabase extends Dexie {
   deadlines!: Table<Deadline, number>;
   urgentReviews!: Table<UrgentReview, number>;
   settings!: Table<Setting, string>;
+  events!: Table<CalendarEvent, number>;
 
   constructor() {
     super('StudyMasterDatabase_v4');
@@ -18,6 +19,16 @@ export class StudyMasterDatabase extends Dexie {
       deadlines: '++id, courseId, dueDate, completed',
       urgentReviews: '++id, courseId, completed',
       settings: 'key, value',
+    });
+
+    // v2: calendar events (timetable, study blocks, priorities)
+    this.version(2).stores({
+      courses: 'id, code, name, color',
+      topics: '++id, courseId, weekNumber, topicId, topicTitle',
+      deadlines: '++id, courseId, dueDate, completed',
+      urgentReviews: '++id, courseId, completed',
+      settings: 'key, value',
+      events: '++id, date, tag, courseId',
     });
   }
 }
